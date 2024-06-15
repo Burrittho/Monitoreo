@@ -1,0 +1,9 @@
+node_modules/
+
+# Compiled files
+dist/
+build/
+*.log
+
+# Environment variables
+.env

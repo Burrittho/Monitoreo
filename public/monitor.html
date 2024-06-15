@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Especifica que el documento está escrito en HTML5 -->
+    <meta charset="UTF-8">
+    <!-- Configura el ancho de la ventana gráfica para que coincida con el ancho del dispositivo -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Título de la página que aparece en la pestaña del navegador -->
+    <title>IP Ping Monitor</title>
+    <!-- Enlace a la hoja de estilos de Tailwind CSS para diseño y estilos -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
+    <!-- Título principal de la página, centrado y con estilo -->
+    <h1 class="text-6xl font-bold text-center my-8">Monitoreo Sucursales</h1>
+    <!-- Enlace a la página de configuración para agregar una nueva IP, estilizado como un botón -->
+    <a href="configuracion.html" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-auto mb-8">Agregar Nueva IP</a>
+    <!-- Contenedor para la lista de IPs monitoreadas, con diseño de rejilla -->
+    <div id="ipList" class="max-w-screen-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 my-8"></div>
+    <!-- Enlace al archivo JavaScript que contiene la lógica de la aplicación -->
+    <script src="js/scripts.js" type="module"></script>
+</body>
+</html>
