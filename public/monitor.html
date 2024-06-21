@@ -9,15 +9,42 @@
     <title>IP Ping Monitor</title>
     <!-- Enlace a la hoja de estilos de Tailwind CSS para diseño y estilos -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+    <!-- Estilos CSS adicionales para el icono de configuracion -->
+    <style>
+        /* Estilo para el icono de engrane flotante */
+        .gear-icon {
+            position: fixed; /* Fija la posición del icono */
+            bottom: 2rem; /* Distancia desde el borde inferior */
+            right: 2rem; /* Distancia desde el borde derecho */
+            z-index: 50; /* Capa sobre el resto del contenido */
+            transition: all 0.3s ease; /* Transición suave al pasar el mouse */
+        }
+
+        /* Estilo al pasar el mouse sobre el icono de engrane */
+        .gear-icon:hover {
+            transform: scale(1.1); /* Aumenta ligeramente el tamaño */
+        }
+    </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
-    <!-- Título principal de la página, centrado y con estilo -->
-    <h1 class="text-6xl font-bold text-center my-8">Monitoreo Sucursales</h1>
-    <!-- Enlace a la página de configuración para agregar una nueva IP, estilizado como un botón -->
-    <a href="configuracion.html" class="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-auto mb-8">Agregar Nueva IP</a>
+<!-- Fondo e inicio del cuerpo de la página -->
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white relative">
+    <!-- Título principal de la página -->
+    <h1 class="text-6xl font-bold text-center mt-8 mb-12">Monitoreo Sucursales</h1>
+    
     <!-- Contenedor para la lista de IPs monitoreadas, con diseño de rejilla -->
     <div id="ipList" class="max-w-screen-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 my-8"></div>
+    
+    <!-- Icono de engrane flotante en la esquina inferior derecha -->
+    <a href="Inicio.html" class="gear-icon bg-white p-4 rounded-full shadow-lg">
+        
+        <!-- SVG del icono de engrane -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 2a4 4 0 110 8 4 4 0 010-8zm0 10a6 6 0 016 6v1a1 1 0 01-1 1H5a1 1 0 01-1-1v-1a6 6 0 016-6z" clip-rule="evenodd" />
+        </svg>
+    </a>
+    
     <!-- Enlace al archivo JavaScript que contiene la lógica de la aplicación -->
-    <script src="js/scripts.js" type="module"></script>
+    <script src="js/funciones/tabs/monitor.js" type="module"></script>
 </body>
 </html>
