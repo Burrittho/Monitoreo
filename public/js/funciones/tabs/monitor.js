@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Crear dos arrays para almacenar los contenedores rojos y verdes
             const redContainers = [];
+            const yellowContainers = [];
             const greenContainers = [];
             
                 // Iterar sobre los resultados obtenidos
@@ -25,14 +26,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             
                     // Establece el color de fondo basado en el éxito del ping
                     if (result.success === true) {
+                        if (result.latency > 70) {
+                            resultContainer.classList.add('bg-yellow-500', 'border-yellow-400', 'hover:bg-yellow-400');
+                            yellowContainers.push(resultContainer); // Agregar al array de contenedores amarillos
+                        } else {
                         resultContainer.classList.add('bg-green-500', 'border-green-400', 'hover:bg-green-400', 'delay-150');
                         greenContainers.push(resultContainer); // Agregar al array de contenedores verdes
-                    } else {
+                        }  
+                        } else {
                         resultContainer.classList.add('bg-red-500', 'border-red-400', 'animate-bounce'); 
                         redContainers.push(resultContainer); // Agregar al array de contenedores rojos
                     }
             
                     // Añade el contenido HTML para mostrar la información del ping
+                    resultContainer.innerHTML = `
+                        <a href="${result.success === true ? `https://${result.ip}:4434` : `/process-ip?ip=${result.ip}`}" target="_blank">
+                            <div class="text-center block max-w-sm p-6 rounded-lg">
+                                <h5 class="text-2xl font-bold text-white">${result.name}</h5>
+                                <p class="text-sm text-white">${result.ip}</p>
+                                <p class="font-bold text-sm text-white">${result.success === true ? `${result.latency} ms` : 'Host no alcanzable'}</p>
+                            </div>
+                        </a>
+                    `;
+
+/*
                     resultContainer.innerHTML = `
                         <a href="https://${result.success === true ? `${result.ip}:4434` : result.url}" target="_blank">
                             <div class="text-center block max-w-sm p-6 rounded-lg">
@@ -42,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </a>
                     `;
-            
+*/
                     // Añadir la clase de hover delay       
                     resultContainer.classList.add('hover:delay-300');
             
@@ -54,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ipListContainer.innerHTML = '';
             
                 // Agregar primero los contenedores rojos y luego los verdes
-                [...redContainers, ...greenContainers].forEach(container => {
+                [...redContainers, ...yellowContainers, ...greenContainers].forEach(container => {
                     ipListContainer.appendChild(container);
                 });
             
@@ -64,7 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Recarga los resultados cada segundo
-        setTimeout(cargarResultadosPing, 1000);
+        setTimeout(cargarResultadosPing, 10000);
     }
 
     if (ipListContainer) {

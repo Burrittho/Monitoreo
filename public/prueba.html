@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados</title>
+    <!-- Incluye tu CSS aquí -->
+</head>
+<body>
+    <div id="resultContainer"></div>
+
+    <script>
+        // Función para obtener los parámetros de la URL
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            const data = JSON.parse(decodeURIComponent(params.get('data')));
+            return { data };
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const { data } = getQueryParams();
+            const resultContainer = document.getElementById('resultContainer');
+
+            resultContainer.innerHTML = `
+                <h1>Detalles de IP</h1>
+                <p>ID: ${data.id}</p>
+                <p>IP: ${data.ip}</p>
+                <p>Name: ${data.name}</p>
+                <p>URL: ${data.url || 'N/A'}</p>
+                <p>Internet1: ${data.internet1 || 'N/A'}</p>
+                <p>Internet2: ${data.internet2 || 'N/A'}</p>
+            `;
+        });
+    </script>
+</body>
+</html>

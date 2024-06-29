@@ -1,22 +1,30 @@
-const raw = require('raw-socket');
-const express = require('express');  // Importa el módulo Express para crear el servidor web.
-const mariadb = require('mariadb');  // Importa el módulo MariaDB para conectar y operar con la base de datos MariaDB.
+require('dotenv').config();
+const express = require('express');
+const mariadb = require('mariadb');
+const ping = require('net-ping');
 
-
-const app = express();               // Crea una instancia de la aplicación Express.
-const port = 3000;                   // Define el puerto en el cual el servidor escuchará.
+const app = express();
+const port = 3000;
 
 // Configuración del pool de conexiones a la base de datos
 const pool = mariadb.createPool({
-    host: 'localhost',               // Dirección del servidor de la base de datos.
-    user: 'ping_user',               // Usuario para la conexión a la base de datos.
-    password: 'password',            // Contraseña del usuario de la base de datos.
-    database: 'ping_monitor',        // Nombre de la base de datos.
-    connectionLimit: 100             // Límite de conexiones simultáneas.
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT) || 3306, // Valor por defecto si no se proporciona
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10 // Valor por defecto si no se proporciona
 });
-        
-let ipList = [];            // Arreglo para almacenar las IPs cargadas de la base de datos.
-let pingIntervals = [];     // Arreglo para almacenar los intervalos de ping para cada IP.
+
+let ipList = [];
+let pingIntervals = [];// Definir una lista para almacenar los intervalos de ping
+let session; // Variable para almacenar la sesión de ping
+
+// Función para limpiar todos los intervalos de ping
+function clearAllPingIntervals() {
+    pingIntervals.forEach(({ intervalId }) => clearInterval(intervalId));
+    pingIntervals = [];
+}
 
 // Función para cargar las IPs desde la base de datos
 async function loadIps() {
@@ -27,64 +35,174 @@ async function loadIps() {
 }
 
 // Middleware para servir archivos estáticos y parsear JSON
-app.use(express.static('public'));   // Sirve archivos estáticos desde la carpeta 'public'.
-app.use(express.json());             // Middleware para parsear cuerpos de solicitudes JSON.
+app.use(express.static('public'));
+app.use(express.json());
 
 // Middleware de manejo de errores
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).send('Something broke!');  // Responde con un mensaje de error 500 en caso de error.
+    res.status(500).send('Error general -Puede ser cualquier cosa- Usa chatgpt');
 });
 
-
-// Endpoint para obtener el reporte de latencia
-app.get('/api/reporte', async (req, res, next) => {
-    const { ip, periodo } = req.query;
-
+// API para obtener las IPs
+app.get('/ips', async (req, res) => {
+    let connection;
     try {
-        let fromDate;
-        switch (periodo) {
-            case '1dia':
-                fromDate = obtenerFecha(-1); // Obtener fecha de hace 1 día
-                break;
-            case '3dias':
-                fromDate = obtenerFecha(-3); // Obtener fecha de hace 3 días
-                break;
-            case '1semana':
-                fromDate = obtenerFecha(-7); // Obtener fecha de hace 1 semana
-                break;
-            case '1mes':
-                fromDate = obtenerFecha(-30); // Obtener fecha de hace 1 mes
-                break;
-            default:
-                throw new Error('Periodo no válido');
-        }
-
-        const conn = await pool.getConnection();
-        const query = `
-            SELECT ips.name, ips.ip, 
-                   AVG(ping_logs.latency) AS mediaLatencia, 
-                   SUM(IF(ping_logs.success = 0, 1, 0)) AS vecesSinRespuesta, 
-                   SUM(IF(ping_logs.success = 0, TIMESTAMPDIFF(MINUTE, ping_logs.fecha, NOW()), 0)) AS tiempoSinRespuesta
-            FROM ips
-            LEFT JOIN ping_logs ON ips.id = ping_logs.ip_id
-            WHERE ips.ip = ? AND ping_logs.fecha >= ?
-            GROUP BY ips.name, ips.ip
-        `;
-        const [rows] = await conn.query(query, [ip, fromDate]);
-        conn.release();
-
-        if (!Array.isArray(rows)) {
-            throw new Error('No se encontraron datos para la IP especificada en el período seleccionado.');
-        }
-
-        res.json(rows); // Devuelve los datos como JSON al cliente
-    } catch (error) {
-        console.error('Error al obtener reporte de latencia:', error.message);
-        next(error); // Pasar el error al siguiente middleware de manejo de errores
+        connection = await pool.getConnection();
+        const query = 'SELECT * FROM ips';
+        const rows = await connection.query(query);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).send(err.toString());
+    } finally {
+        if (connection) connection.end();
     }
 });
 
+// API para obtener los logs de ping y calcular la latencia media
+app.get('/latency', async (req, res) => {
+    const ipId = req.query.ipId;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+
+    if (!ipId || !startDate || !endDate) {
+        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
+        return;
+    }
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const query = `
+            SELECT AVG(latency) AS average_latency
+            FROM ping_logs
+            WHERE ip_id = ? AND fecha BETWEEN ? AND ?
+        `;
+        const rows = await connection.query(query, [ipId, startDate, endDate]);
+        res.json(rows[0]);
+    } catch (err) {
+        res.status(500).send(err.toString());
+    } finally {
+        if (connection) connection.end();
+    }
+});
+
+// API para contar los paquetes perdidos
+app.get('/packetloss', async (req, res) => {
+    const ipId = req.query.ipId;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+
+    if (!ipId || !startDate || !endDate) {
+        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
+        return;
+    }
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const query = `
+            SELECT COUNT(*) AS packet_loss
+            FROM ping_logs
+            WHERE ip_id = ? AND success = 0 AND fecha BETWEEN ? AND ?
+        `;
+        const rows = await connection.query(query, [ipId, startDate, endDate]);
+        res.json({ packet_loss: Number(rows[0].packet_loss) });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send(err.toString());
+    } finally {
+        if (connection) connection.end();
+    }
+});
+
+// API para contar caidas de ping
+app.get('/downtime', async (req, res) => {
+    const ipId = req.query.ipId;
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+
+    if (!ipId || !startDate || !endDate) {
+        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
+        return;
+    }
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const query = `
+            WITH DowntimePeriods AS (
+                SELECT
+                    id,
+                    ip_id,
+                    fecha,
+                    success,
+                    @rn := IF(@prev_ip_id = ip_id AND @prev_success = success, @rn, @rn + 1) AS rn,
+                    @prev_ip_id := ip_id,
+                    @prev_success := success
+                FROM
+                    ping_logs
+                JOIN (SELECT @rn := 0, @prev_ip_id := NULL, @prev_success := NULL) AS vars
+                WHERE
+                    ip_id = ?
+                    AND fecha BETWEEN ? AND ?
+            ), DowntimeDetected AS (
+                SELECT
+                    MIN(fecha) AS downtime_start,
+                    MAX(fecha) AS downtime_end,
+                    TIMEDIFF(MAX(fecha), MIN(fecha)) AS downtime_duration,
+                    rn
+                FROM
+                    DowntimePeriods
+                WHERE
+                    success = 0
+                GROUP BY
+                    rn
+                HAVING
+                    COUNT(*) >= 10
+            ), UptimeDetected AS (
+                SELECT
+                    MIN(fecha) AS uptime_start,
+                    MAX(fecha) AS uptime_end,
+                    rn
+                FROM
+                    DowntimePeriods
+                WHERE
+                    success = 1
+                GROUP BY
+                    rn
+                HAVING
+                    COUNT(*) >= 10
+            )
+            SELECT
+                D.downtime_start,
+                D.downtime_end,
+                D.downtime_duration,
+                U.uptime_start
+            FROM
+                DowntimeDetected D
+            JOIN
+                UptimeDetected U ON D.rn < U.rn
+            WHERE
+                U.uptime_start = (
+                    SELECT
+                        MIN(uptime_start)
+                    FROM
+                        UptimeDetected
+                    WHERE
+                        rn > D.rn
+                )
+            ORDER BY
+                D.downtime_start;
+        `;
+        const rows = await connection.query(query, [ipId, startDate, endDate]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).send(err.toString());
+    } finally {
+        if (connection) connection.end();
+    }
+});
 
 // Endpoint para obtener los resultados del ping
 app.get('/api/ping-results', async (req, res, next) => {
@@ -102,88 +220,41 @@ app.get('/api/ping-results', async (req, res, next) => {
             ORDER BY ips.name
         `);
         conn.release();
-        res.json(rows);  // Devuelve los resultados del ping en formato JSON.
+        res.json(rows);
     } catch (err) {
         next(err);
     }
 });
 
-// Endpoint para obtener ips para tab monitor
-app.get('/api/tablaips', async (req, res, next) => {
-    try {
-        const conn = await pool.getConnection();
-        const rows = await conn.query(`
-            SELECT ips.name, ips.ip, ips.url, ips.internet1, internet2
-            FROM ips
-            ORDER BY ips.name
-        `);
-        conn.release();
-        res.json(rows);  // Devuelve las IPs en formato JSON.
-    } catch (err) {
-        next(err);
-    }
-});
-
-
-// Endpoint para obtener detalles de una IP específica pruebaaa
-app.get('/api/tablaips', async (req, res, next) => {
-    const ipAddress = req.query.ip; // Obtener la IP del parámetro de consulta
-    
-    try {
-        const conn = await pool.getConnection();
-        const rows = await conn.query(`
-            SELECT ips.name, ips.url, ips.internet1, ips.internet2
-            FROM ips
-            WHERE ips.ip = ?
-        `, [ipAddress]);
-        conn.release();
-        
-        if (rows.length > 0) {
-            res.json(rows[0]); // Devolver el primer resultado encontrado en formato JSON
-        } else {
-            res.status(404).json({ error: 'IP not found' });
-        }
-    } catch (err) {
-        next(err);
-    }
-});
-
-
-// Endpoint para agregar ips a la base de datos utiliza formaddips
+// Endpoint para agregar IPs a la base de datos
 app.post('/ips', async (req, res, next) => {
     try {
         const conn = await pool.getConnection();
         const { name, ip, url, internet1, internet2 } = req.body;
 
-        // Inserta los datos en la base de datos
-        const result = await conn.query("INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)", [name, ip, url, internet1, internet2]);
-        await loadIps();  // Carga nuevamente las IPs para incluir la nueva.
+        // Insertar los datos en la base de datos
+        const result = await conn.query("INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)", [name, ip, url || '', internet1 || '', internet2 || '']);
+        await loadIps();  // Cargar nuevamente las IPs para incluir la nueva.
         conn.release();
 
-        res.json({ message: 'IP added successfully' });  // Responde con un mensaje de éxito.
+        res.json({ message: 'IP added successfully' });
 
-        // Añadir la nueva IP al proceso de pings continuos
-        const newIP = ip;
-        const intervalId = setInterval(() => {
-            hacerPing(newIP);  // Inicia un ping continuo cada segundo.
-        }, 1000);
-        pingIntervals.push({ ip: newIP, intervalId });
-
-        console.log(`Ping continuo iniciado para la nueva IP: ${newIP}`);
+       // Reiniciar los pings continuos
+       clearAllPingIntervals(); // Limpiar todos los intervalos existentes
+       iniciarPingsContinuos(); // Iniciar pings continuos con la lista actualizada de IPs
 
     } catch (err) {
         next(err);
     }
 });
 
-// Endpoint para obtener datos de latencia por IP y rango de fechas y horas para grafico
+// Endpoint para obtener datos de latencia por IP y rango de fechas y horas
 app.get('/api/latency-data', async (req, res, next) => {
     let { ip, fromDate, fromTime, toDate, toTime } = req.query;
 
     try {
         const conn = await pool.getConnection();
 
-        // Construir consulta SQL base
         let query = `
             SELECT fecha, latency
             FROM ping_logs
@@ -191,13 +262,11 @@ app.get('/api/latency-data', async (req, res, next) => {
         `;
         const params = [];
 
-        // Filtrar por IP si se proporciona
         if (ip) {
             query += ` AND ip_id IN (SELECT id FROM ips WHERE ip = ?)`;
             params.push(ip);
         }
 
-        // Filtrar por rango de fecha y hora si se proporciona
         if (fromDate && fromTime && toDate && toTime) {
             const fromDateTime = `${fromDate} ${fromTime}`;
             const toDateTime = `${toDate} ${toTime}`;
@@ -207,137 +276,158 @@ app.get('/api/latency-data', async (req, res, next) => {
 
         query += ` ORDER BY fecha`;
 
-        // Ejecutar consulta SQL
         const rows = await conn.query(query, params);
         conn.release();
 
-        // Mapear resultados para enviar como respuesta
         const latencyData = rows.map(row => ({
-            timestamp: row.fecha, // Utilizamos fecha como timestamp
+            timestamp: row.fecha,
             latency: row.latency
         }));
 
-        res.json(latencyData);  // Devuelve los datos de latencia en formato JSON.
+        res.json(latencyData);
     } catch (err) {
         next(err);
     }
 });
 
 // Iniciar la carga de IPs al arrancar el servidor
-loadIps(); 
+loadIps();
 
-// Inicia el servidor en el puerto especificado
-app.listen(port, () => {
-    console.log(`Server is running at http://localhost:${port}`);
-});
+// Iniciar sesión de ping con opciones personalizadas
+const pingOptions = {
+    networkProtocol: ping.NetworkProtocol.IPv4,
+    packetSize: 64,
+    retries: 3,
+    timeout: 3000,
+    ttl: 64
+};
 
-// Función para crear un paquete ICMP de prueba
-function createICMPPacket() {
-    const buffer = Buffer.alloc(8);
-    buffer.writeUInt8(8, 0); // Type
-    buffer.writeUInt8(0, 1); // Code
-    buffer.writeUInt16BE(0, 2); // Checksum
-    buffer.writeUInt16BE(1, 4); // Identifier
-    buffer.writeUInt16BE(1, 6); // Sequence number
+// Función para crear y mantener la sesión de ping
+function createPingSession() {
+    try {
+        session = ping.createSession(pingOptions);
 
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i += 2) {
-        sum += buffer.readUInt16BE(i);
+        session.on('error', (error) => {
+            if (error && error.message) {
+                console.error('Error en la sesión de ping:', error.message);
+            } else {
+                console.error('Error en la sesión de ping:', error || 'Error desconocido');
+            }
+            
+            // Lógica adicional para reiniciar la sesión
+            console.log('Reiniciando la sesión de ping...');
+            session.close(); // Cerrar la sesión existente
+            createPingSession(); // Crear una nueva sesión de ping
+        });
+
+        console.log('Sesión de ping creada exitosamente.');
+    } catch (error) {
+        console.error('Error al crear la sesión de ping:', error.message || error); 
+        
     }
-    sum = (sum >> 16) + (sum & 0xFFFF);
-    sum += (sum >> 16);
-    const checksum = ~sum & 0xFFFF;
-
-    buffer.writeUInt16BE(checksum, 2);
-
-    return buffer;
 }
 
-// Función para hacer ping a una IP
+// Función para hacer ping a una IP utilizando la sesión de ping
 async function hacerPing(ip) {
-    let socket;
-    let pingSuccessful = false;
-    let start;
+    try {
+    if (!session) {
+        createPingSession(); // Aseguramos que haya una sesión de ping creada
+    }
+
+    let start = Date.now();
 
     return new Promise((resolve, reject) => {
-        socket = raw.createSocket({ protocol: raw.Protocol.ICMP });
-
-        socket.on('message', (buffer, source) => {
-            if (source === ip) {
-                pingSuccessful = true;
-                resolve(buffer);
-            }
-        });
-
-        socket.on('error', (error) => {
-            reject(error);
-        });
-
-        const packet = createICMPPacket();
-        start = Date.now();
-
-        socket.send(packet, 0, packet.length, ip, (error) => {
+        session.pingHost(ip, (error, target, sent, rcvd) => {
+            let latency = rcvd - sent;
             if (error) {
-                reject(error);
+                if (error instanceof ping.RequestTimedOutError) {
+                    resolve({ alive: false, time: 0 });
+                } else {
+                    reject(error);
+                }
+            } else {
+                resolve({ alive: true, time: latency });
             }
         });
-
-        setTimeout(() => {
-            if (!pingSuccessful) {
-                reject(new Error('Ping timeout'));
-            }
-        }, 5000);
-    }).then((response) => {
-        const end = Date.now();
-        const latency = end - start;
-
-        return { alive: pingSuccessful, time: latency };
-    }).catch((error) => {
-        return { alive: false, time: 0 };
-    }).finally(() => {
-        socket.close();
     });
+} catch (error) {
+    console.error(`Error al hacer ping a ${ip}:`, error.message || error);
+    throw error; // Propaga el error para que pueda ser capturado y manejado fuera de esta función si es necesario.
+}
 }
 
-// Función para iniciar pings continuos
+// Función para iniciar pings continuos para todas las IPs registradas
 async function iniciarPingsContinuos() {
     try {
         const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query("SELECT ip FROM ips");
-            rows.forEach(row => {
-                setInterval(async () => {
-                    try {
-                        const result = await hacerPing(row.ip);
-                        const latency = Number.isFinite(result.time) ? result.time : 0;
+        const rows = await conn.query("SELECT ip FROM ips");
+        conn.release();
 
-                        const conn = await pool.getConnection();
-                        try {
-                            await conn.query("INSERT INTO ping_logs (ip_id, latency, success) VALUES ((SELECT id FROM ips WHERE ip = ?), ?, ?)", [
-                                row.ip,
-                                latency,
-                                result.alive ? 1 : 0
-                            ]);
-                        } finally {
-                            conn.release();
-                        }
+        rows.forEach(row => {
+            const intervalId = setInterval(async () => {
+                try {
+                    const result = await hacerPing(row.ip);
+                    const latency = Number.isFinite(result.time) ? result.time : 0;
 
-                        console.log(`Ping realizado a ${row.ip}, Alive: ${result.alive}, Latency: ${latency}`);
-                    } catch (err) {
-                        console.error(`Error al hacer ping a ${row.ip}: ${err.message}`);
-                    }
-                }, 1000);
-            });
+                    const conn = await pool.getConnection();
+                    await conn.query("INSERT INTO ping_logs (ip_id, latency, success) VALUES ((SELECT id FROM ips WHERE ip = ?), ?, ?)", [
+                        row.ip,
+                        latency,
+                        result.alive ? 1 : 0
+                    ]);
+                    conn.release();
 
-            console.log('Pings continuos iniciados para todas las IPs registradas.');
-        } finally {
-            conn.release();
-        }
+                    console.log(`Ping realizado a ${row.ip}, Alive: ${result.alive}, Latency: ${latency}`);
+                } catch (err) {
+                    console.error(`Error al hacer ping a ${row.ip}: ${err.message}`);
+                }
+            }, 1000);
+            pingIntervals.push({ ip: row.ip, intervalId });
+        });
+
+        console.log('Pings continuos iniciados para todas las IPs registradas.');
     } catch (err) {
         console.error("Error al iniciar pings continuos:", err.message);
     }
 }
 
-
 // Iniciar los pings continuos al arrancar el servidor
 iniciarPingsContinuos();
+
+// Iniciar sesión de ping al arrancar el servidor
+createPingSession();
+
+// Iniciar el servidor en el puerto especificado
+app.listen(port, () => {
+    console.log(`Server is running at http://localhost:${port}`);
+});
+
+app.get('/process-ip', async (req, res) => {
+    const ip = req.query.ip;
+
+    if (!ip) {
+        res.status(400).send('IP is required.');
+        return;
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        const query = 'SELECT * FROM ips WHERE ip = ?';
+        const [rows] = await connection.query(query, [ip]);
+
+        connection.release();
+
+        if (rows.length === 0) {
+            res.status(404).send('IP not found.');
+            return;
+        }
+
+        const data = rows;
+
+        // Redirige a prueba.html con los datos obtenidos como parámetros de consulta
+        res.redirect(`/prueba.html?data=${encodeURIComponent(JSON.stringify(data))}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server error.');
+    }
+});

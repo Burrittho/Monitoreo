@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
     <head>
         <meta charset="UTF-8">
@@ -9,11 +8,8 @@
 
         <!-- Archivo JavaScript externo para scripts para la pesatana de monitor -->
         <script src="js/funciones/tabs/agregar.js"></script>
-        <!-- Archivo JavaScript externo para scripts para los tabs -->
-        <script src="js/funciones/tabs.js"></script>
        
-
-
+        
         <!-- Incluye  Charts.js -->
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <!-- Incluir chartjs-adapter-date-fns desde CDN -->
@@ -35,24 +31,6 @@
                     background-color: rgba(209, 213, 219, 1); /* Gris cuando no está activo */
                 }
 
-                /* Estilos para el contenedor de la tabla con scroll */
-                .table-container {
-                    max-height: 400px; /* Altura máxima del contenedor */
-                    overflow-y: auto; /* Habilitar desplazamiento vertical */
-                    border: 1px solid #e5e7eb; /* Borde para visualización */
-                }
-
-                /* Ajustes para la disposición de las columnas */
-                .flex-container {
-                    display: flex;
-                    gap: 20px; /* Espacio entre elementos */
-                }
-
-                /* Ajustes adicionales para el formulario */
-                .form-container {
-                    flex: 1; /* Ocupar todo el espacio disponible en la columna */
-                }
-
                 /* Clase para ocultar contenidos */
                 .hidden {
                     display: none;
@@ -63,243 +41,256 @@
     <!-- Fondo de pagina e inicio de cuerpo de pagina -->
     <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
         <!-- Titulo de la pagina -->
-        <h1 class="text-6xl font-bold text-center my-8">Bienvenido</h1>
-        <!-- Agregar comentario -->
+        <h1 class="text-6xl font-bold text-center my-8">Monitoreo IT</h1>
+        <!-- Contenedor principal -->
         <div class="container mx-auto py-8">
-            <!-- Contenedor principal -->
+            <!-- Division contenedor principal -->
             <div class="md:flex md:space-x-4">
                 <!-- Lista de pestañas -->
                 <ul id="tabList" class="flex-col space-y-4 text-sm font-medium text-gray-500 dark:text-gray-400 md:w-48 md:mr-4 mb-4 md:mb-0">
                     <!-- Pestaña Agregar -->
                     <li>
                         <a href="#tab-monitor" class="tab-link flex items-center px-4 py-3 rounded-lg hover:text-gray-900 bg-gray-50 hover:bg-gray-100 w-full dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:text-white" aria-current="page">
-                            <svg class="w-4 h-4 me-2 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
-                                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                            </svg>
-                            Monitor
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+                              </svg>
+                              
+                             Monitor
                         </a>
                     </li>
-                    <!-- Pestaña Historial -->
+                    <!-- Pestaña reportes -->
                     <li>
                         <a href="#tab-herramientas" class="tab-link flex items-center px-4 py-3 rounded-lg hover:text-gray-900 bg-gray-50 hover:bg-gray-100 w-full dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:text-white">
-                            <svg class="w-4 h-4 me-2 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 18">
-                                <path d="M6.143 0H1.857A1.857 1.857 0 0 0 0 1.857v4.286C0 7.169.831 8 1.857 8h4.286A1.857 1.857 0 0 0 8 6.143V1.857A1.857 1.857 0 0 0 6.143 0Zm10 0h-4.286A1.857 1.857 0 0 0 10 1.857v4.286C10 7.169 10.831 8 11.857 8h4.286A1.857 1.857 0 0 0 18 6.143V1.857A1.857 1.857 0 0 0 16.143 0Zm-10 10H1.857A1.857 1.857 0 0 0 0 11.857v4.286C0 17.169.831 18 1.857 18h4.286A1.857 1.857 0 0 0 8 16.143v-4.286A1.857 1.857 0 0 0 6.143 10Zm10 0h-4.286A1.857 1.857 0 0 0 10 11.857v4.286c0 1.026.831 1.857 1.857 1.857h4.286A1.857 1.857 0 0 0 18 16.143v-4.286A1.857 1.857 0 0 0 16.143 10Z" />
-                            </svg>
-                            Historial
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Zm3.75 11.625a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                              </svg>
+                            Reportes
+                        </a>
+                    </li>
+                    <!-- Pestaña Grafico -->
+                    <li>
+                        <a href="#tab-grafico" class="tab-link flex items-center px-4 py-3 rounded-lg hover:text-gray-900 bg-gray-50 hover:bg-gray-100 w-full dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
+                              </svg>
+                            Grafica
                         </a>
                     </li>
                     <!-- Pestaña Configurar -->
                     <li>
-                        <a href="#tab-configuracion" class="tab-link flex items-center px-4 py-3 rounded-lg hover:text-gray-900 bg-gray-50 hover:bg-gray-100 w-full dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:text-white">
-                            <svg class="w-4 h-4 me-2 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M18 7.5h-.423l-.452-1.09.3-.3a1.5 1.5 0 0 0 0-2.121L16.01 2.575a1.5 1.5 0 0 0-2.121 0l-.3.3-1.089-.452V2A1.5 1.5 0 0 0 11 .5H9A1.5 1.5 0 0 0 7.5 2v.423l-1.09.452-.3-.3a1.5 1.5 0 0 0-2.121 0L2.576 3.99a1.5 1.5 0 0 0 0 2.121l.3.3L2.423 7.5H2A1.5 1.5 0 0 0 .5 9v2A1.5 1.5 0 0 0 2 12.5h1a1.993 1.993 0 0 0 1.722-1h.361a4.92 4.92 0 0 0 4.824-4H17a3 3 0 0 0 3-3v-2a3 3 0 0 0-3-3Z" />
-                            </svg>
+                        <a href="#tab-disabled"
+                            class="tab-link flex items-center px-4 py-3 text-gray-400 rounded-lg cursor-not-allowed bg-gray-50 w-full dark:bg-gray-800 dark:text-gray-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 22 22" stroke-width="1" stroke="currentColor" class="w-5 h-5 mr-2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                              </svg>
+                              
                             Configurar
                         </a>
                     </li>
-
-                    <!-- Pestaña Disabled -->
-                    <li>
-                        <a href="#tab-disabled"
-                            class="tab-link flex items-center px-4 py-3 text-gray-400 rounded-lg cursor-not-allowed bg-gray-50 w-full dark:bg-gray-800 dark:text-gray-500">
-                            <svg class="w-4 h-4 me-2 text-gray-400 dark:text-gray-500"
-                                xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-                                <path
-                                    d="M17 7A7 7 0 1 0 3 7a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1V7a5 5 0 1 1 10 0v7.083A2.92 2.92 0 0 1 12.083 17H12a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1a1.993 1.993 0 0 0 1.722-1h.361a4.92 4.92 0 0 0 4.824-4H17a3 3 0 0 0 3-3v-2a3 3 0 0 0-3-3Z" />
-                            </svg>
-                            Disabled
-                        </a>
-                    </li>
                 </ul>
-
                 <!-- Contenido de las pestañas -->
                 <div class="p-6 bg-gray-50 text-medium text-gray-500 dark:text-gray-400 dark:bg-gray-800 rounded-lg w-full">
                     <!-- Contenido dinámico según la pestaña seleccionada, se cargara primero la pestana monitor-->
                     <div id="tab-monitor" class="tab-content">
                         <!-- Formulario para agregar nueva IP / pestana monitoreo -->
                         <div class="md:flex-1">
-                            <!-- Contenedor flexible para tabla y formulario -->
+                             <!-- Contenedor flexible para alguna tabla y formulario -->
                             <div class="flex-container">
-                                <!-- Formulario para agregar nueva IP -->
+                                <!-- Contenedor de formulario -->
                                 <div class="form-container">
+                                    <!-- Formulario para agregar nueva IP -->
                                     <form id="addIpForm" class="mt-4">
+                                        <!-- Combobox IP -->
                                         <div class="mb-4">
                                             <label for="ip" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Dirección IP</label>
                                             <input type="text" id="ip" name="ip" required pattern="\b(?:\d{1,3}\.){3}\d{1,3}\b" title="Debe ser una dirección IP válida (0.0.0.0 - 255.255.255.255)" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. 192.168.1.1">
                                         </div>
+                                        <!-- Combobox nombre -->
                                         <div class="mb-4">
                                             <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre</label>
                                             <input type="text" id="name" name="name" required class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. Sucursal #06">
-                                        </div>
+                                        </div><!-- Combobox Telnor -->
                                         <div class="mb-4">
-                                            <label for="internet1" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Servicio Telnor</label>
-                                            <input type="internet1" id="internet1" name="internet1" required class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. 66412345678">
+                                            <label for="internet1" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">Servicio Telnor</label>
+                                            <div class="mb-4 flex items-center">
+                                                <input type="text" id="internet1" name="internet1" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. 66412345678">
+                                                <!-- Checkbox -->
+                                                <div class="ml-2 flex items-center">
+                                                    <input type="checkbox" id="internet1Empty" name="internet1Empty" class="form-checkbox h-4 w-4 text-indigo-600">
+                                                    <label for="internet1Empty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
+                                                </div>
+                                            </div>
                                         </div>
+                                        <!-- Combobox TotalPlay -->
                                         <div class="mb-4">
-                                            <label for="internet2" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Servicio TotalPlay</label>
-                                            <input type="internet2" id="internet2" name="internet2" required class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. 020045852">
+                                            <label for="internet2" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">Servicio TotalPlay</label>
+                                            <div class="mb-4 flex items-center">
+                                                <input type="text" id="internet2" name="internet2" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. 020045852">
+                                                <!-- Checkbox -->
+                                                <div class="ml-2 flex items-center">
+                                                    <input type="checkbox" id="internet2Empty" name="internet2Empty" class="form-checkbox h-4 w-4 text-indigo-600">
+                                                    <label for="internet2Empty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
+                                                </div>
+                                            </div>
                                         </div>
+                                        <!-- Combobox URL -->
                                         <div class="mb-4">
-                                            <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL</label>
-                                            <input type="url" id="url" name="url" required class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. https://example.com">
+                                            <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">URL</label>
+                                            <div class="mb-4 flex items-center">
+                                                <input type="url" id="url" name="url" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. https://example.com">
+                                                <!-- Checkbox -->
+                                                <div class="ml-2 flex items-center ">
+                                                    <input type="checkbox" id="urlEmpty" name="urlEmpty" class="form-checkbox h-4 w-4 text-indigo-600">
+                                                    <label for="urlEmpty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
+                                                </div>
+                                            </div>
                                         </div>
+
+                                        <!-- Boton Agregar -->
                                         <div>
                                             <button type="submit" class="w-30 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Agregar IP</button>
                                         </div>
+                                     <!-- Fin de Form -->
                                     </form>
-
                                     <!-- Contenedor para mensajes de error -->
                                     <div id="errorContainer" class="mt-4"></div>
+                                    <!-- Contenedor para mensajes de éxito -->
+                                    <div id="successContainer" class="mt-4"></div>
+                                 <!-- Fin contenedor de form -->   
                                 </div>
-
-                                <!-- Contenedor con scroll para la tabla -->
-                                <div class="table-container">
-                                    <table id="ipTable" class="table-auto w-full">
-                                        <thead>
-                                            <tr>
-                                                <th class="px-4 py-2 text-left">Nombre</th>
-                                                <th class="px-4 py-2 text-left">IP</th>
-                                                <th class="px-4 py-2 text-left">URL</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <!-- Aquí se cargarán dinámicamente las filas de la tabla -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div> <!-- Fin de flex-container -->
-                        </div> <!-- Fin de md:flex-1 -->
-                    </div> <!-- Fin de tab-monitor -->
-
-                    <!-- Contenido de la pestaña Herramientas -->
-                    <div id="tab-herramientas" class="hidden tab-content">
-                        <!-- Contenido de configuración -->
-                        <div class="md:flex-1">
-                            <!-- Contenedor flexible para tabla y formulario -->
-                            <div class="flex-container">
-                                <!-- Contenido del historial -->
-                                <div id="reportFormContainer" class="mt-8">
-                                    <form id="reportForm" class="flex items-center">
-                                        <label for="reportPeriod" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Seleccionar período:</label>
-                                        <select id="reportPeriod" name="reportPeriod" class="block w-40 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2">
-                                            <option value="1">1 día</option>
-                                            <option value="3">3 días</option>
-                                            <option value="7">1 semana</option>
-                                            <option value="30">1 mes</option>
-                                        </select>
-                                        <button type="submit" class="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Generar Reporte</button>
-                                    </form>
-                                </div>
-                                <div id="ipReportTableContainer" class="mt-8">
-                                    <table id="ipReportTable" class="table-auto w-full">
-                                        <thead>
-                                            <tr>
-                                                <th class="px-4 py-2 text-left">IP</th>
-                                                <th class="px-4 py-2 text-left">Nombre</th>
-                                                <th class="px-4 py-2 text-left">Media de Latencia</th>
-                                                <th class="px-4 py-2 text-left">Veces Caída</th>
-                                                <th class="px-4 py-2 text-left">Tiempo Caído (minutos)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <!-- Aquí se cargarán dinámicamente las filas de la tabla -->
-                                        </tbody>
-                                    </table>
-                                </div>
-                            <!-- Fin contenedor flexible para tabla y formulario -->
+                             <!-- Fin de flex-container -->
                             </div>
-                        <!-- Fin contenido de configuración -->
+                         <!--Fin del Formulario-->
+                        </div> 
+                     <!-- Fin de tab-monitor -->
+                    </div>
+
+                   <!-- Contenido de la pestaña Herramientas -->
+                    <div id="tab-herramientas" class="tab-content">
+                        <!-- Contenido de la configuración -->
+                        <h2 class="text-2xl text-center font-bold mb-4">Reporte de Paquetes perdidos, Latencia y Caidas</h2>
+                        <!-- Campos de consulta y muestra -->
+                        <div>
+                            <label for="ipSelect" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Selecciona una IP:</label>
+                            <!-- Opciones de IP se pueden cargar dinámicamente si es necesario -->
+                            <select id="ipSelect" name="ip" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                <option value="">--Lista de IPs--</option>
+                            </select>
                         </div>
-                    <!-- Fin de tab-herramientas -->
+                        <div class="mt-4">
+                            <label for="startDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">inicio:</label>
+                            <input type="datetime-local" id="startDate" name="startDate" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                        </div>
+                        <div class="mt-4">
+                            <label for="endDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Fin:</label>
+                            <input type="datetime-local" id="endDate" name="endDate" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                        </div>
+                        <div class="mt-4">
+                            <button id="getMetrics" class="w-56 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Buscar</button>
+                        </div>
+                        <div id="resultLatency" class="mt-8"></div>
+                        <div id="resultPacketLoss"></div>
+                        <div id="resultDowntime"></div>
+                        <div id="downtimeCount"></div>
                     </div> 
 
-                    <!-- Contenido de la pestaña Configurar -->
-                    <div id="tab-configuracion" class="hidden tab-content">
-                        <!-- Contenido de configuración -->
-                        <div class="md:flex-1">
-                            <!-- Contenedor flexible para tabla y formulario -->
-                            <div class="flex-container">
-                                <!-- Formulario para buscar y graficar la latencia -->
-                                <div class="form-container">
-                                    <!-- Funcion para ejecutar mi form seacrchlantency en js/scripts.js -->
-                                    <form id="searchLatencyForm" class="mt-4">
-                                        <div class="mb-4">
-                                            <label for="searchIp" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Buscar por IP</label>
-                                            <input type="text" id="searchIp" name="ip" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Dirección IP">
+                    <!-- Contenido de la pestaña Grafico -->
+                    <div id="tab-grafico" class="tab-content">
+                                <!-- Contenido de configuración -->
+                                <div class="md:flex-1">
+                                    <!-- Contenedor flexible para tabla y formulario -->
+                                    <div class="flex-container">
+                                        <!-- Formulario para buscar y graficar la latencia -->
+                                        <div class="form-container">
+                                            <!-- Funcion para ejecutar mi form seacrchlantency en js/scripts.js -->
+                                            <form id="searchLatencyForm" class="mt-4">
+                                                <div class="mb-4">
+                                                    <label for="searchIp" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Buscar por IP</label>
+                                                    <input type="text" id="searchIp" name="ip" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Dirección IP">
+                                                </div>
+                                                <div class="mb-4">
+                                                    <label for="searchDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha</label>
+                                                    <input type="date" id="searchDate" name="date" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" required>
+                                                </div>
+                                                <div class="mb-4">
+                                                    <label for="hourRange" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Rango de hora</label>
+                                                    <select id="hourRange" name="hourRange" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                                        <option value="00:00-01:00">00:00 - 01:00</option>
+                                                        <option value="01:00-02:00">01:00 - 02:00</option>
+                                                        <option value="02:00-03:00">02:00 - 03:00</option>
+                                                        <option value="03:00-04:00">03:00 - 04:00</option>
+                                                        <option value="04:00-05:00">04:00 - 05:00</option>
+                                                        <option value="05:00-06:00">05:00 - 06:00</option>
+                                                        <option value="06:00-07:00">06:00 - 07:00</option>
+                                                        <option value="07:00-08:00">07:00 - 08:00</option>
+                                                        <option value="08:00-09:00">08:00 - 09:00</option>
+                                                        <option value="09:00-10:00">09:00 - 10:00</option>
+                                                        <option value="10:00-11:00">10:00 - 11:00</option>
+                                                        <option value="11:00-12:00">11:00 - 12:00</option>
+                                                        <option value="12:00-13:00">12:00 - 13:00</option>
+                                                        <option value="13:00-14:00">13:00 - 14:00</option>
+                                                        <option value="14:00-15:00">14:00 - 15:00</option>
+                                                        <option value="15:00-16:00">15:00 - 16:00</option>
+                                                        <option value="16:00-17:00">16:00 - 17:00</option>
+                                                        <option value="17:00-18:00">17:00 - 18:00</option>
+                                                        <option value="18:00-19:00">18:00 - 19:00</option>
+                                                        <option value="19:00-20:00">19:00 - 20:00</option>
+                                                        <option value="20:00-21:00">20:00 - 21:00</option>
+                                                        <option value="21:00-22:00">21:00 - 22:00</option>
+                                                        <option value="22:00-23:00">22:00 - 23:00</option>
+                                                        <option value="23:00-00:00">23:00 - 00:00</option>
+                                                    </select>
+                                                </div>
+                                                <!-- Boton para ejecutar la funcion searchLatencyForm  -->
+                                                <div>
+                                                    <button type="submit" class="w-56 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Buscar y Graficar</button>
+                                                </div>
+                                            <!-- Cierre del formulario -->   
+                                            </form>
+                                        <!-- Fin formulario para buscar y graficar la latencia -->
                                         </div>
-                                        <div class="mb-4">
-                                            <label for="searchDate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha</label>
-                                            <input type="date" id="searchDate" name="date" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" required>
-                                        </div>
-                                        <div class="mb-4">
-                                            <label for="hourRange" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Rango de hora</label>
-                                            <select id="hourRange" name="hourRange" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                                                <option value="00:00-01:00">00:00 - 01:00</option>
-                                                <option value="01:00-02:00">01:00 - 02:00</option>
-                                                <option value="02:00-03:00">02:00 - 03:00</option>
-                                                <option value="03:00-04:00">03:00 - 04:00</option>
-                                                <option value="04:00-05:00">04:00 - 05:00</option>
-                                                <option value="05:00-06:00">05:00 - 06:00</option>
-                                                <option value="06:00-07:00">06:00 - 07:00</option>
-                                                <option value="07:00-08:00">07:00 - 08:00</option>
-                                                <option value="08:00-09:00">08:00 - 09:00</option>
-                                                <option value="09:00-10:00">09:00 - 10:00</option>
-                                                <option value="10:00-11:00">10:00 - 11:00</option>
-                                                <option value="11:00-12:00">11:00 - 12:00</option>
-                                                <option value="12:00-13:00">12:00 - 13:00</option>
-                                                <option value="13:00-14:00">13:00 - 14:00</option>
-                                                <option value="14:00-15:00">14:00 - 15:00</option>
-                                                <option value="15:00-16:00">15:00 - 16:00</option>
-                                                <option value="16:00-17:00">16:00 - 17:00</option>
-                                                <option value="17:00-18:00">17:00 - 18:00</option>
-                                                <option value="18:00-19:00">18:00 - 19:00</option>
-                                                <option value="19:00-20:00">19:00 - 20:00</option>
-                                                <option value="20:00-21:00">20:00 - 21:00</option>
-                                                <option value="21:00-22:00">21:00 - 22:00</option>
-                                                <option value="22:00-23:00">22:00 - 23:00</option>
-                                                <option value="23:00-00:00">23:00 - 00:00</option>
-                                            </select>
-                                        </div>
-                                        <!-- Boton para ejecutar la funcion searchLatencyForm  -->
-                                        <div>
-                                            <button type="submit" class="w-56 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Buscar y Graficar</button>
-                                        </div>
-                                    <!-- Cierre del formulario -->   
-                                    </form>
-                                <!-- Fin formulario para buscar y graficar la latencia -->
+                                        <!-- Contenedor para mensajes de error -->
+                                        <div id="searchErrorContainer" class="mt-4"></div>
+                                    </div>
+                                    <!-- Contenedor para el gráfico de latencia -->
+                                    <div id="latencyChartContainer" class="mt-8">
+                                        <canvas id="latencyChart"></canvas>
+                                    </div>
+                                <!-- Fin de md:flex-1 -->
                                 </div>
-                                <!-- Contenedor para mensajes de error -->
-                                <div id="searchErrorContainer" class="mt-4"></div>
-                            </div>
-                            <!-- Contenedor para el gráfico de latencia -->
-                            <div id="latencyChartContainer" class="mt-8">
-                                <canvas id="latencyChart"></canvas>
-                            </div>
-                        <!-- Fin de md:flex-1 -->
-                        </div>
-                    <!-- Fin de tab-configuracion -->
+                            <!-- Fin de tab-configuracion -->
                     </div> 
 
                     <!-- Contenido de la pestaña Disabled -->
-                    <div id="tab-disabled" class="hidden tab-content">
-                    <!-- Contenido deshabilitado -->
-                    <p class="text-lg">Esta pestaña está deshabilitada...</p>
+                    <div id="tab-disabled" class="tab-content hidden">
+                            <!-- Contenido deshabilitado -->
+                            <p class="text-lg">Esta pestaña está deshabilitada...</p>
                     </div>
 
                     <script>
-                        // Hacer que los event listeners sean passive
-                        document.addEventListener('wheel', (event) => {}, { passive: true });
-                        document.addEventListener('touchstart', (event) => {}, { passive: true });
+                                // Hacer que los event listeners sean passive
+                                document.addEventListener('wheel', (event) => {}, { passive: true });
+                                document.addEventListener('touchstart', (event) => {}, { passive: true });
                     </script>
-                     <!-- Archivo JavaScript externo para scripts para la pesatana de configurar -->
+                    <!-- Archivo JavaScript externo para scripts para la pesatana de configurar -->
                     <script src="js/funciones/tabs/grafica.js"></script>
-                <!-- Fin contenido de las pestañas -->
-                </div>        
-             <!-- Cierre contenedor principal -->           
-            </div>   
-        <!-- Fin de p-6 -->
-        </div> 
-    <!-- Cierre fondo de pagina e inicio de cuerpo de pagina -->
+                    <!-- Archivo JavaScript externo para scripts para los tabs -->
+                    <script src="js/funciones/tabs.js"></script>   
+                    <!-- Archivo JavaScript externo para scripts para la pesatana de herramientas -->
+                    <script src="js/funciones/tabs/reporte.js"></script>
+                            
+                 <!-- Fin contenido de las pestañas -->
+                </div>           
+                      
+             <!-- Fin de p-6 -->
+            </div> 
+
+         <!-- Cierre contenedor principal -->
+        </div>
+        
+     <!-- Cierre fondo de pagina e inicio de cuerpo de pagina -->
     </body>
     
 </html>
