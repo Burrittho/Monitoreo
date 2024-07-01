@@ -402,6 +402,8 @@ app.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
 });
 
+
+//Endpoint identificar sucursal caida y mandar a pagina Reporte.html
 app.get('/process-ip', async (req, res) => {
     const ip = req.query.ip;
 
@@ -425,7 +427,7 @@ app.get('/process-ip', async (req, res) => {
         const data = rows;
 
         // Redirige a prueba.html con los datos obtenidos como parámetros de consulta
-        res.redirect(`/prueba.html?data=${encodeURIComponent(JSON.stringify(data))}`);
+        res.redirect(`/Reporte.html?data=${encodeURIComponent(JSON.stringify(data))}`);
     } catch (err) {
         console.error(err);
         res.status(500).send('Server error.');

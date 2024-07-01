@@ -48,18 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </a>
                     `;
-
-/*
-                    resultContainer.innerHTML = `
-                        <a href="https://${result.success === true ? `${result.ip}:4434` : result.url}" target="_blank">
-                            <div class="text-center block max-w-sm p-6 rounded-lg">
-                                <h5 class="text-2xl font-bold text-white">${result.name}</h5>
-                                <p class="text-sm text-white">${result.ip}</p>
-                                <p class="font-bold text-sm text-white">${result.success === true ? `${result.latency} ms` : 'Host no alcanzable'}</p>
-                            </div>
-                        </a>
-                    `;
-*/
+                    
                     // Añadir la clase de hover delay       
                     resultContainer.classList.add('hover:delay-300');
             
@@ -81,7 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         // Recarga los resultados cada segundo
-        setTimeout(cargarResultadosPing, 10000);
+        setTimeout(cargarResultadosPing, 1000);
     }
 
     if (ipListContainer) {

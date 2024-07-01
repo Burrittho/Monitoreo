@@ -45,6 +45,13 @@ async function getDowntime(ipId, startDate, endDate) {
   }
 }
 
+// Función para formatear una fecha en formato corto con hora en formato 24 horas
+function formatDate(dateString) {
+  const options = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' };
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', options);
+}
+
 // Event listener para inicializar la página después de que el DOM esté completamente cargado
 document.addEventListener('DOMContentLoaded', async () => {
   const ipSelect = document.getElementById('ipSelect');
@@ -118,9 +125,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-// Función para formatear una fecha en formato corto con hora en formato 24 horas
-function formatDate(dateString) {
-  const options = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' };
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', options);
-}
+
