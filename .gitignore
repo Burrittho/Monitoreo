@@ -6,5 +6,4 @@ build/
 *.log
 
 # Environment variables
-.env
 pruebas.js

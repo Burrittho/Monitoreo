@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Limpia el contenedor de la lista de IPs
             ipListContainer.innerHTML = '';
 
+             // Ordenar los resultados por nombre
+             data.sort((a, b) => a.name.localeCompare(b.name));
+
             // Crear dos arrays para almacenar los contenedores rojos y verdes
             const redContainers = [];
             const yellowContainers = [];

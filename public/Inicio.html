@@ -4,18 +4,28 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Configuración</title>
-        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
-        <!-- Archivo JavaScript externo para scripts para la pesatana de monitor -->
-        <script src="js/funciones/tabs/agregar.js"></script>
+        <!--Vistas-->
+        <!-- Tailwind CSS -->
+        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+        <!-- SweetAlert2 CSS -->
+        <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+        <!-- SweetAlert2 JS -->
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+
        
-        
+        <!--Funciones-->
         <!-- Incluye  Charts.js -->
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <!-- Incluir chartjs-adapter-date-fns desde CDN -->
         <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
         <!-- Incluir chartjs-plugin-zoom desde CDN -->
         <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+        <!-- Archivo JavaScript externo para scripts para la pesatana de monitor -->
+        <script src="js/inicio/tabs/agregar.js"></script>
+
+        
 
             <style>
                 /* Estilos adicionales para las pestañas */
@@ -34,6 +44,31 @@
                 /* Clase para ocultar contenidos */
                 .hidden {
                     display: none;
+                }
+
+                /* Estilos para boton de ciclo carga*/
+                .spinner-border {
+                    display: inline-block;
+                    width: 2rem;
+                    height: 2rem;
+                    vertical-align: text-bottom;
+                    border: .25em solid currentColor;
+                    border-right-color: transparent;
+                    border-radius: 50%;
+                    -webkit-animation: spinner-border .75s linear infinite;
+                    animation: spinner-border .75s linear infinite;
+                }
+                @-webkit-keyframes spinner-border {
+                    100% {
+                        -webkit-transform: rotate(360deg);
+                        transform: rotate(360deg);
+                    }
+                }
+                @keyframes spinner-border {
+                    100% {
+                        -webkit-transform: rotate(360deg);
+                        transform: rotate(360deg);
+                    }
                 }
             </style>
     </head>
@@ -111,53 +146,31 @@
                                         <div class="mb-4">
                                             <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre</label>
                                             <input type="text" id="name" name="name" required class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. Sucursal #06">
-                                        </div><!-- Combobox Telnor -->
+                                        </div>
+                                        <!-- Combobox Telnor -->
                                         <div class="mb-4">
                                             <label for="internet1" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">Servicio Telnor</label>
                                             <div class="mb-4 flex items-center">
                                                 <input type="text" id="internet1" name="internet1" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. 66412345678">
-                                                <!-- Checkbox -->
-                                                <div class="ml-2 flex items-center">
-                                                    <input type="checkbox" id="internet1Empty" name="internet1Empty" class="form-checkbox h-4 w-4 text-indigo-600">
-                                                    <label for="internet1Empty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
-                                                </div>
                                             </div>
                                         </div>
                                         <!-- Combobox TotalPlay -->
                                         <div class="mb-4">
                                             <label for="internet2" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">Servicio TotalPlay</label>
                                             <div class="mb-4 flex items-center">
-                                                <input type="text" id="internet2" name="internet2" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. 020045852">
-                                                <!-- Checkbox -->
-                                                <div class="ml-2 flex items-center">
-                                                    <input type="checkbox" id="internet2Empty" name="internet2Empty" class="form-checkbox h-4 w-4 text-indigo-600">
-                                                    <label for="internet2Empty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
-                                                </div>
+                                                <input type="text" id="internet2" name="internet2" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. 66412345678">
                                             </div>
                                         </div>
                                         <!-- Combobox URL -->
                                         <div class="mb-4">
-                                            <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex-1">URL</label>
-                                            <div class="mb-4 flex items-center">
-                                                <input type="url" id="url" name="url" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md mr-2" placeholder="Ej. https://example.com">
-                                                <!-- Checkbox -->
-                                                <div class="ml-2 flex items-center ">
-                                                    <input type="checkbox" id="urlEmpty" name="urlEmpty" class="form-checkbox h-4 w-4 text-indigo-600">
-                                                    <label for="urlEmpty" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Dejar vacío</label>
-                                                </div>
-                                            </div>
+                                            <label for="url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL</label>
+                                            <input type="text" id="url" name="url" class="mt-1 block w-56 px-3 py-2 border-gray-300 dark:border-gray-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" placeholder="Ej. www.misitio.com">
                                         </div>
-
-                                        <!-- Boton Agregar -->
-                                        <div>
-                                            <button type="submit" class="w-30 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Agregar IP</button>
-                                        </div>
-                                     <!-- Fin de Form -->
+                                        <!-- Botón de envío -->
+                                        <button id="btn-addIp" type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-lg">Agregar IP</button>
                                     </form>
                                     <!-- Contenedor para mensajes de error -->
                                     <div id="errorContainer" class="mt-4"></div>
-                                    <!-- Contenedor para mensajes de éxito -->
-                                    <div id="successContainer" class="mt-4"></div>
                                  <!-- Fin contenedor de form -->   
                                 </div>
                              <!-- Fin de flex-container -->
@@ -274,12 +287,16 @@
                                 document.addEventListener('wheel', (event) => {}, { passive: true });
                                 document.addEventListener('touchstart', (event) => {}, { passive: true });
                     </script>
+                    
                     <!-- Archivo JavaScript externo para scripts para la pesatana de configurar -->
-                    <script src="js/funciones/tabs/grafica.js"></script>
+                    <script src="js/inicio/tabs/grafica.js"></script>
                     <!-- Archivo JavaScript externo para scripts para los tabs -->
-                    <script src="js/funciones/tabs.js"></script>   
+                    <script src="js/inicio/tabs.js"></script>   
                     <!-- Archivo JavaScript externo para scripts para la pesatana de herramientas -->
-                    <script src="js/funciones/tabs/reporte.js"></script>
+                    <script src="js/inicio/tabs/reporte.js"></script>
+                    <!-- SweetAlert2 JS -->
+                    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+                    
                             
                  <!-- Fin contenido de las pestañas -->
                 </div>           

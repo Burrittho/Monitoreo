@@ -1,20 +1,12 @@
 require('dotenv').config();
 const express = require('express');
-const mariadb = require('mariadb');
 const ping = require('net-ping');
+const pool = require('./config/db'); // Importamos el pool de conexiones desde db.js
+const routes = require('./routes/routes');
+const path = require('path');
 
 const app = express();
 const port = 3000;
-
-// Configuración del pool de conexiones a la base de datos
-const pool = mariadb.createPool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT) || 3306, // Valor por defecto si no se proporciona
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10 // Valor por defecto si no se proporciona
-});
 
 let ipList = [];
 let pingIntervals = [];// Definir una lista para almacenar los intervalos de ping
@@ -43,6 +35,13 @@ app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).send('Error general -Puede ser cualquier cosa- Usa chatgpt');
 });
+
+// Middleware para servir archivos estáticos desde la carpeta public
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+// Usamos las rutas definidas en routes.js
+app.use('/', routes);
 
 // API para obtener las IPs
 app.get('/ips', async (req, res) => {
@@ -226,28 +225,6 @@ app.get('/api/ping-results', async (req, res, next) => {
     }
 });
 
-// Endpoint para agregar IPs a la base de datos
-app.post('/ips', async (req, res, next) => {
-    try {
-        const conn = await pool.getConnection();
-        const { name, ip, url, internet1, internet2 } = req.body;
-
-        // Insertar los datos en la base de datos
-        const result = await conn.query("INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)", [name, ip, url || '', internet1 || '', internet2 || '']);
-        await loadIps();  // Cargar nuevamente las IPs para incluir la nueva.
-        conn.release();
-
-        res.json({ message: 'IP added successfully' });
-
-       // Reiniciar los pings continuos
-       clearAllPingIntervals(); // Limpiar todos los intervalos existentes
-       iniciarPingsContinuos(); // Iniciar pings continuos con la lista actualizada de IPs
-
-    } catch (err) {
-        next(err);
-    }
-});
-
 // Endpoint para obtener datos de latencia por IP y rango de fechas y horas
 app.get('/api/latency-data', async (req, res, next) => {
     let { ip, fromDate, fromTime, toDate, toTime } = req.query;
@@ -287,6 +264,79 @@ app.get('/api/latency-data', async (req, res, next) => {
         res.json(latencyData);
     } catch (err) {
         next(err);
+    }
+});
+
+// Endpoint para agregar IPs a la base de datos
+app.post('/addips', async (req, res, next) => {
+    try {
+        const { name, ip, url, internet1, internet2 } = req.body;
+        const conn = await pool.getConnection();
+
+        // Verificar si el nombre ya existe en la base de datos
+        const [nameResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE name = ?", [name]);
+        console.log("Resultado de nameResult:", nameResult[0]);
+        const nameCount = Number(nameResult.count);
+
+        if (nameCount > 0) {
+            conn.release();
+            return res.status(400).json({ error: `El nombre '${name}' ya está registrado.` });
+        }
+
+        // Verificar si la IP ya existe en la base de datos
+        const [ipResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE ip = ?", [ip]);
+        console.log("Resultado de ipResult:", ipResult[0]);
+        const ipCount = Number(ipResult.count);
+
+        if (ipCount > 0) {
+            conn.release();
+            return res.status(400).json({ error: `La IP '${ip}' ya está registrada.` });
+        }
+
+        // Si el nombre y la IP no existen, insertar los datos en la base de datos
+        const query = "INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)";
+        await conn.query(query, [name, ip, url || '', internet1 || '', internet2 || '']);
+        conn.release();
+
+        res.json({ message: 'IP agregada correctamente' });
+
+        // Reiniciar los pings continuos
+        clearAllPingIntervals(); // Limpiar todos los intervalos existentes
+        iniciarPingsContinuos(); // Iniciar pings continuos con la lista actualizada de IPs
+    } catch (err) {
+        console.error("Error al procesar la solicitud:", err); // Registrar el error en la consola para depuración
+        return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+//Endpoint identificar sucursal caida y mandar a pagina Reporte.html
+app.get('/process-ip', async (req, res) => {
+    const ip = req.query.ip;
+
+    if (!ip) {
+        res.status(400).send('IP is required.');
+        return;
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        const query = 'SELECT * FROM ips WHERE ip = ?';
+        const [rows] = await connection.query(query, [ip]);
+
+        connection.release();
+
+        if (rows.length === 0) {
+            res.status(404).send('IP not found.');
+            return;
+        }
+
+        const data = rows;
+
+        // Redirige a prueba.html con los datos obtenidos como parámetros de consulta
+        res.redirect(`/Reporte.html?data=${encodeURIComponent(JSON.stringify(data))}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server error.');
     }
 });
 
@@ -377,7 +427,7 @@ async function iniciarPingsContinuos() {
                     ]);
                     conn.release();
 
-                    console.log(`Ping realizado a ${row.ip}, Alive: ${result.alive}, Latency: ${latency}`);
+                   // console.log(`Ping realizado a ${row.ip}, Alive: ${result.alive}, Latency: ${latency}`);
                 } catch (err) {
                     console.error(`Error al hacer ping a ${row.ip}: ${err.message}`);
                 }
@@ -397,39 +447,12 @@ iniciarPingsContinuos();
 // Iniciar sesión de ping al arrancar el servidor
 createPingSession();
 
+// Ruta principal para servir monitor.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
+});
+
 // Iniciar el servidor en el puerto especificado
 app.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
-});
-
-
-//Endpoint identificar sucursal caida y mandar a pagina Reporte.html
-app.get('/process-ip', async (req, res) => {
-    const ip = req.query.ip;
-
-    if (!ip) {
-        res.status(400).send('IP is required.');
-        return;
-    }
-
-    try {
-        const connection = await pool.getConnection();
-        const query = 'SELECT * FROM ips WHERE ip = ?';
-        const [rows] = await connection.query(query, [ip]);
-
-        connection.release();
-
-        if (rows.length === 0) {
-            res.status(404).send('IP not found.');
-            return;
-        }
-
-        const data = rows;
-
-        // Redirige a prueba.html con los datos obtenidos como parámetros de consulta
-        res.redirect(`/Reporte.html?data=${encodeURIComponent(JSON.stringify(data))}`);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Server error.');
-    }
 });

@@ -81,11 +81,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
+      // Mostrar el símbolo de carga usando SweetAlert2
+      Swal.fire({
+        title: 'Cargando...',
+        html: 'Por favor espera.',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
       const [latencyData, packetLossData, downtimeData] = await Promise.all([
         getLatency(ipId, startDate, endDate),
         getPacketLoss(ipId, startDate, endDate),
         getDowntime(ipId, startDate, endDate)
       ]);
+
+      Swal.close(); // Cerrar el símbolo de carga
 
       resultLatency.textContent = latencyData ? `Average Latency: ${latencyData.average_latency} ms` : 'Error fetching latency data';
       resultPacketLoss.textContent = packetLossData ? `Packet Loss: ${packetLossData.packet_loss}` : 'Error fetching packet loss data';
@@ -118,11 +130,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       
     } catch (error) {
       console.error('Error fetching metrics:', error);
+      Swal.close(); // Cerrar el símbolo de carga en caso de error
       resultLatency.textContent = 'Error fetching metrics';
       resultPacketLoss.textContent = '';
       resultDowntime.textContent = '';
     }
   });
 });
-
-
