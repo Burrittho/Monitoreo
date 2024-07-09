@@ -62,6 +62,8 @@
 
     "node-fetch": "^2.6.1",
 
+    "nodemailer": "^6.9.14",
+
     "ping": "^0.4.4",
 
     "ping-lite": "^2.0.2",
