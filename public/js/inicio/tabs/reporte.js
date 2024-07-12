@@ -99,8 +99,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       Swal.close(); // Cerrar el símbolo de carga
 
-      resultLatency.textContent = latencyData ? `Average Latency: ${latencyData.average_latency} ms` : 'Error fetching latency data';
-      resultPacketLoss.textContent = packetLossData ? `Packet Loss: ${packetLossData.packet_loss}` : 'Error fetching packet loss data';
+      resultLatency.textContent = latencyData ? `Latencia media: ${latencyData.average_latency} ms` : 'Error al obtener la latencia'; // Mostrar el resultado de la latencia
+
+      resultPacketLoss.textContent = packetLossData ? `Paquetes perdidos: ${packetLossData.packet_loss}` : 'Error al obtener los pquetes perdidos';
 
       if (downtimeData) {
         resultDowntime.innerHTML = `
@@ -125,15 +126,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         downtimeCount.textContent = `Cantidad sin sistema: ${downtimeData.length}`;
       } else {
-        resultDowntime.textContent = 'Error fetching downtime data';
+        resultDowntime.textContent = 'Error al obtener tiempo de caida';
       }
       
     } catch (error) {
       console.error('Error fetching metrics:', error);
       Swal.close(); // Cerrar el símbolo de carga en caso de error
-      resultLatency.textContent = 'Error fetching metrics';
-      resultPacketLoss.textContent = '';
-      resultDowntime.textContent = '';
+      resultLatency.textContent = 'Error fal cargar latencia';
+      resultPacketLoss.textContent = 'error al cargar paquetes perdidos';
+      resultDowntime.textContent = 'Error al cargar tiempo de caida';
     }
   });
 });

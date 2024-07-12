@@ -3,8 +3,8 @@ const express = require('express');
 const pool = require('./config/db'); // Importamos el pool de conexiones desde db.js
 const routes = require('./routes/routes');
 const path = require('path');
-const { monitorIPs } = require('./controllers/mailcontroller');
-const {iniciarPingsContinuos,  hacerPing,  loadIps,    createPingSession,  clearAllPingIntervals} =require('./models/ping');
+const { startMonitoring, restartMonitoring } = require('./controllers/mailcontroller');
+const {iniciarPingsContinuos,  loadIps,    createPingSession,  clearAllPingIntervals} = require('./models/ping');
 
 const app = express();
 const port = 3000;
@@ -113,7 +113,7 @@ app.get('/downtime', async (req, res) => {
     try {
         connection = await pool.getConnection();
         const query = `
-            WITH DowntimePeriods AS (
+              WITH DowntimePeriods AS (
                 SELECT
                     id,
                     ip_id,
@@ -126,8 +126,8 @@ app.get('/downtime', async (req, res) => {
                     ping_logs
                 JOIN (SELECT @rn := 0, @prev_ip_id := NULL, @prev_success := NULL) AS vars
                 WHERE
-                    ip_id = ?
-                    AND fecha BETWEEN ? AND ?
+                    ip_id = 3
+                    AND fecha >= NOW() - INTERVAL 24 HOUR
             ), DowntimeDetected AS (
                 SELECT
                     MIN(fecha) AS downtime_start,
@@ -283,6 +283,10 @@ app.post('/addips', async (req, res, next) => {
 
         res.json({ message: 'IP agregada correctamente' });
 
+
+        // Reiniciar los monitor caidas-corre
+        restartMonitoring(); // Detener el monitoreo actual
+
         // Reiniciar los pings continuos
         clearAllPingIntervals(); // Limpiar todos los intervalos existentes
         iniciarPingsContinuos(); // Iniciar pings continuos con la lista actualizada de IPs
@@ -332,15 +336,16 @@ iniciarPingsContinuos();
 // Iniciar sesión de ping al arrancar el servidor
 createPingSession();
 
+// Ejecutar monitorIPs
+startMonitoring();
+
+
 // Ruta principal para servir monitor.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
 });
 
-// Ejecutar monitorIPs() cada 5 minutos
-setInterval(() => {
-    monitorIPs();
-}, 1 * 60 * 1000); // 1 minutos
+
 
 // Iniciar el servidor en el puerto especificado
 app.listen(port, () => {

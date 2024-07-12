@@ -22,8 +22,7 @@
         <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
         <!-- Incluir chartjs-plugin-zoom desde CDN -->
         <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
-        <!-- Archivo JavaScript externo para scripts para la pesatana de monitor -->
-        <script src="js/inicio/tabs/agregar.js"></script>
+        
 
         
 
@@ -70,6 +69,22 @@
                         transform: rotate(360deg);
                     }
                 }
+
+
+                /* Boton monitor*/
+
+                .gear-icon {
+                position: fixed; /* Fija la posición del icono */
+                bottom: 2rem; /* Distancia desde el borde inferior */
+                right: 2rem; /* Distancia desde el borde derecho */
+                z-index: 50; /* Capa sobre el resto del contenido */
+                transition: all 0.3s ease; /* Transición suave al pasar el mouse */
+            }
+
+            /* Estilo al pasar el mouse sobre el icono de engrane */
+            .gear-icon:hover {
+                transform: scale(1.1); /* Aumenta ligeramente el tamaño */
+            }
             </style>
     </head>
 
@@ -77,6 +92,17 @@
     <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white">
         <!-- Titulo de la pagina -->
         <h1 class="text-6xl font-bold text-center my-8">Monitoreo IT</h1>
+
+            <!-- Icono de engrane flotante en la esquina inferior derecha -->
+            <a href="monitor.html" class="gear-icon bg-white p-4 rounded-full shadow-lg">
+            
+                <!-- SVG del icono de engrane -->
+                <svg 
+                xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 2a4 4 0 110 8 4 4 0 010-8zm0 10a6 6 0 016 6v1a1 1 0 01-1 1H5a1 1 0 01-1-1v-1a6 6 0 016-6z" clip-rule="evenodd" />
+                </svg>
+            </a>
+            
         <!-- Contenedor principal -->
         <div class="container mx-auto py-8">
             <!-- Division contenedor principal -->
@@ -291,7 +317,9 @@
                     <!-- Archivo JavaScript externo para scripts para la pesatana de configurar -->
                     <script src="js/inicio/tabs/grafica.js"></script>
                     <!-- Archivo JavaScript externo para scripts para los tabs -->
-                    <script src="js/inicio/tabs.js"></script>   
+                    <script src="js/inicio/tabs.js"></script>
+                    <!-- Archivo JavaScript externo para scripts para la pesatana de monitor -->
+                    <script src="js/inicio/tabs/agregar.js"></script>   
                     <!-- Archivo JavaScript externo para scripts para la pesatana de herramientas -->
                     <script src="js/inicio/tabs/reporte.js"></script>
                     <!-- SweetAlert2 JS -->
