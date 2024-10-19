@@ -45,22 +45,12 @@ function clearAllPingIntervals() {
     pingIntervals = [];
 }
 
-// Función para cargar las IPs desde la base de datos
-async function loadIps() {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT * FROM ips');
-    ipList = rows;
-    conn.release();
-}
-
 // Función para hacer ping a una IP utilizando la sesión de ping
 async function hacerPing(ip) {
     try {
     if (!session) {
         createPingSession(); // Aseguramos que haya una sesión de ping creada
     }
-
-    let start = Date.now();
 
     return new Promise((resolve, reject) => {
         session.pingHost(ip, (error, target, sent, rcvd) => {
@@ -86,7 +76,8 @@ async function hacerPing(ip) {
 async function iniciarPingsContinuos() {
     try {
         const conn = await pool.getConnection();
-        const rows = await conn.query("SELECT ip FROM ips");
+        const [rows] = await conn.query('SELECT ip FROM ips');
+        ipList = rows;
         conn.release();
 
         rows.forEach(row => {
@@ -96,8 +87,19 @@ async function iniciarPingsContinuos() {
                     const latency = Number.isFinite(result.time) ? result.time : 0;
 
                     const conn = await pool.getConnection();
-                    await conn.query("INSERT INTO ping_logs (ip_id, latency, success) VALUES ((SELECT id FROM ips WHERE ip = ?), ?, ?)", [
-                        row.ip,
+                    const [ipIdRow] = await conn.query("SELECT id FROM ips WHERE ip = ?", [row.ip]);
+
+                    // Verificar si se encontró el id de la IP
+                    if (!ipIdRow || ipIdRow.length === 0) {
+                        console.error(`No se encontró el id de la IP ${row.ip}`);
+                        conn.release();
+                        return;
+                    }
+
+                    const ipId = ipIdRow[0].id;
+
+                    await conn.query("INSERT INTO ping_logs (ip_id, latency, success) VALUES (?, ?, ?)", [
+                        ipId,
                         latency,
                         result.alive ? 1 : 0
                     ]);
@@ -118,5 +120,5 @@ async function iniciarPingsContinuos() {
 }
 
 module.exports = {
-    iniciarPingsContinuos, hacerPing, loadIps, createPingSession, clearAllPingIntervals
+    iniciarPingsContinuos, hacerPing, createPingSession, clearAllPingIntervals
 };

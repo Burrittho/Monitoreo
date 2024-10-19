@@ -1,51 +1,85 @@
-</html>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reportes falla</title>
+    <title>Reportes - No sistema</title>
     <!-- Traer CDN de Tailwind CSS -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <!-- incluir las funciones -->
     <script src="./js/reporte/datos.js" defer></script>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 h-screen flex">
 
-<div class="max-w-4xl mx-auto py-12">
-    <div class="bg-white shadow-md rounded-lg overflow-hidden">
-        <div class="p-4">
-            <div id="resultContainer">
-                <!-- Contenido dinámico de resultados -->
-            </div>
+<div class="flex flex-row w-full h-full p-4 space-x-4">
+    <!-- Caja Izquierda: Información de Sucursal -->
+    <div class="bg-white shadow-lg rounded-lg p-4 w-1/4 h-auto max-h-80 overflow-auto">
+        <h1 class="text-lg font-bold mb-4">Información de Sucursal</h1>
+        <div id="resultContainer">
+            <!-- La información de la sucursal se llenará aquí -->
         </div>
     </div>
 
-    <!-- Contenedor de instrucciones y imágenes -->
-    <div class="mt-8">
-        <div class="bg-white shadow-md rounded-lg overflow-hidden p-4">
-            <h2 class="text-xl font-bold mb-4">Que hacer en caso de que una sucursal no cuenta con sistema?</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                <!-- Instrucción 1 -->
-                <div class="flex flex-col items-center">
-                    <img src="path_to_your_image" alt="Instruction Image" class="rounded-lg mb-2">
-                    <p class="text-sm text-gray-700">Instrucción detallada sobre lo que hacer.</p>
-                </div>
-                <!-- Instrucción 2 -->
-                <div class="flex flex-col items-center">
-                    <img src="path_to_your_image" alt="Instruction Image" class="rounded-lg mb-2">
-                    <p class="text-sm text-gray-700">Instrucción detallada sobre lo que hacer.</p>
-                </div>
-                <!-- Instrucción 3 -->
-                <div class="flex flex-col items-center">
-                    <img src="path_to_your_image" alt="Instruction Image" class="rounded-lg mb-2">
-                    <p class="text-sm text-gray-700">Instrucción detallada sobre lo que hacer.</p>
-                </div>
-                <!-- Puedes añadir más instrucciones según sea necesario -->
-            </div>
+    <!-- Caja Central: Instrucciones y Respuestas -->
+    <div class="bg-white shadow-lg rounded-lg p-6 w-2/4 h-full overflow-auto flex flex-col items-center justify-center">
+        <h2 class="text-2xl font-bold mb-6">Instrucciones y Respuestas</h2>
+        <div id="instruction-container" class="flex flex-col items-center justify-center">
+            <img id="instruction-image" src="" alt="Instruction Image" class="rounded-lg mb-6 w-72 h-72 object-cover hidden">
+            <p id="instruction-text" class="text-gray-700 text-lg text-center hidden"></p>
         </div>
+    </div>
+
+    <!-- Caja Derecha: Preguntas -->
+    <div class="bg-white shadow-lg rounded-lg p-4 w-1/4 h-auto max-h-80 overflow-auto">
+        <h2 class="text-lg font-bold mb-4">Preguntas</h2>
+        <button class="w-full text-left py-2 px-3 bg-gray-200 hover:bg-gray-300 rounded-lg shadow transition ease-in-out duration-300 text-sm hover:text-blue-600 text-black" 
+                onclick="showInstruction(1)">
+            ¿Cómo reportar a Telnor?
+        </button>
+        <button class="w-full text-left py-2 px-3 bg-gray-200 hover:bg-gray-300 rounded-lg shadow transition ease-in-out duration-300 text-sm hover:text-blue-600 text-black" 
+                onclick="showInstruction(2)">
+            ¿Cómo contactar con Total Play?
+        </button>
+        <button class="w-full text-left py-2 px-3 bg-gray-200 hover:bg-gray-300 rounded-lg shadow transition ease-in-out duration-300 text-sm hover:text-blue-600 text-black" 
+                onclick="showInstruction(3)">
+            Pasos para verificar el sistema localmente
+        </button>
     </div>
 </div>
+
+<script>
+    // Objeto que contiene las instrucciones para cada pregunta
+    const instructions = {
+        1: {
+            image: "path_to_telnor_image.jpg",
+            text: "Para reportar problemas a Telnor, sigue estos pasos: \n1. Marcado rápido - 44011.\n2. Teléfono: 6646336999 > OPCIÓN 1 > OPCIÓN 2."
+        },
+        2: {
+            image: "path_to_totalplay_image.jpg",
+            text: "Para contactar con Total Play, sigue estos pasos: \n1. Marcado rápido - 44025.\n2. Teléfono: 8008108010 > OPCIÓN 2 > Ingresa la cuenta para hablar con el ejecutivo."
+        },
+        3: {
+            image: "path_to_local_check_image.jpg",
+            text: "Para verificar el sistema localmente, sigue estos pasos: \n1. Revisar conexiones.\n2. Verificar que el router esté encendido.\n3. Comprobar el cableado."
+        }
+    };
+
+    // Función para mostrar la instrucción seleccionada
+    function showInstruction(index) {
+        const instruction = instructions[index];
+        const container = document.getElementById('instruction-container');
+        const image = document.getElementById('instruction-image');
+        const text = document.getElementById('instruction-text');
+
+        // Actualizar contenido
+        image.src = instruction.image;
+        text.textContent = instruction.text;
+
+        // Animación de transición (aparecer)
+        image.classList.remove('hidden');
+        text.classList.remove('hidden');
+    }
+</script>
 
 </body>
 </html>

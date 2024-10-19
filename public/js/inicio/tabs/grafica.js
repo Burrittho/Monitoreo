@@ -1,4 +1,7 @@
+/**
+ 
 // Agregar el evento 'submit' al formulario para buscar latencia
+
 document.getElementById('searchLatencyForm').addEventListener('submit', async function(event) {
     event.preventDefault(); // Prevenir el comportamiento por defecto del formulario
 
@@ -63,11 +66,7 @@ document.getElementById('searchLatencyForm').addEventListener('submit', async fu
 
 let latencyChart = null;
 
-/**
- * Function to draw or update latency chart using Chart.js
- * @param {Array} timestamps - Array of timestamps
- * @param {Array} latencies - Array of latencies
- */
+
 const drawLatencyChart = (timestamps, latencies) => {
     // Get the context of the 'latencyChart' canvas element
     const ctx = document.getElementById('latencyChart').getContext('2d');
@@ -109,3 +108,6 @@ const drawLatencyChart = (timestamps, latencies) => {
         }
     });
 };
+
+
+*/

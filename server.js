@@ -3,8 +3,8 @@ const express = require('express');
 const pool = require('./config/db'); // Importamos el pool de conexiones desde db.js
 const routes = require('./routes/routes');
 const path = require('path');
-const { startMonitoring, restartMonitoring } = require('./controllers/mailcontroller');
-const {iniciarPingsContinuos,  loadIps,    createPingSession,  clearAllPingIntervals} = require('./models/ping');
+const { startMonitoring, restartMonitoring, stopMonitoring } = require('./controllers/mailcontroller');
+const {iniciarPingsContinuos, createPingSession, clearAllPingIntervals} = require('./models/ping');
 
 const app = express();
 const port = 3000;
@@ -19,6 +19,16 @@ app.use((err, req, res, next) => {
     res.status(500).send('Error general -Puede ser cualquier cosa- Usa chatgpt');
 });
 
+// Middleware para validar parámetros de consulta
+function validateQueryParams(req, res, next) {
+    const { ipId, startDate, endDate } = req.query;
+    if (!ipId || !startDate || !endDate) {
+        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
+        return;
+    }
+    next();
+}
+
 // Middleware para servir archivos estáticos desde la carpeta public
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -26,7 +36,162 @@ app.use(express.json());
 // Usamos las rutas definidas en routes.js
 app.use('/', routes);
 
-// API para obtener las IPs
+// Endpoint para agregar IPs a la base de datos (Agregar)
+app.post('/addips', async (req, res, next) => {
+    let conn;
+    try {
+        const { name, ip, url, internet1, internet2 } = req.body;
+        conn = await pool.getConnection(); // Obtener conexión
+
+        // Verificar si el nombre ya existe en la base de datos
+        const [nameResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE name = ?", [name]);
+        const nameCount = nameResult[0].count; // Acceder correctamente al resultado
+
+        if (nameCount > 0) {
+            return res.status(400).json({ error: `El nombre '${name}' ya está registrado.` });
+        }
+
+        // Verificar si la IP ya existe en la base de datos
+        const [ipResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE ip = ?", [ip]);
+        const ipCount = ipResult[0].count; // Acceder correctamente al resultado
+
+        if (ipCount > 0) {
+            return res.status(400).json({ error: `La IP '${ip}' ya está registrada.` });
+        }
+
+        // Si el nombre y la IP no existen, insertar los datos en la base de datos
+        const query = "INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)";
+        await conn.query(query, [name, ip, url || '', internet1 || '', internet2 || '']);
+
+        res.json({ message: 'IP agregada correctamente' });
+
+        // Reiniciar el monitoreo y los pings
+        //restartMonitoring();
+        clearAllPingIntervals();
+        iniciarPingsContinuos();
+    } catch (err) {
+        console.error("Error al procesar la solicitud:", err); 
+        return res.status(500).json({ error: 'Error interno del servidor' });
+    } finally {
+        if (conn) conn.release(); // Liberar la conexión
+    }
+});
+
+
+// Endpoint para eliminar una IP y sus registros en ping_logs (Eliminar)
+app.delete('/delete/:id', async (req, res) => {
+    const { id } = req.params;
+
+    let connection;
+    try {
+        // Detener monitoreo y limpiar pings
+        stopMonitoring();
+        clearAllPingIntervals();
+
+        // Obtener una conexión del pool
+        connection = await pool.getConnection();
+
+        // Iniciar una transacción
+        await connection.beginTransaction();
+
+        // Verificar si la IP existe
+        const [ipResult] = await connection.query('SELECT COUNT(*) AS count FROM ips WHERE id = ?', [id]);
+        if (ipResult[0].count === 0) {
+            await connection.rollback(); // Si la IP no existe, hacer rollback
+            return res.status(404).json({ error: `La IP con ID '${id}' no existe.` });
+        }
+
+        // Eliminar los registros asociados en ping_logs
+        const [deleteLogsResult] = await connection.query('DELETE FROM ping_logs WHERE ip_id = ?', [id]);
+
+        // Eliminar la IP de la tabla principal
+        const [deleteIpResult] = await connection.query('DELETE FROM ips WHERE id = ?', [id]);
+
+        // Confirmar la transacción solo si algo fue eliminado
+        if (deleteIpResult.affectedRows > 0) {
+            await connection.commit();
+            res.json({ success: true, message: `La IP: '${id}' y sus registros fueron eliminados correctamente.` });
+        } else {
+            // Si no se elimina ningún registro (esto en teoría no debería ocurrir debido a la verificación previa)
+            await connection.rollback();
+            return res.status(404).json({ error: 'No se encontró la IP para eliminar.' });
+        }
+
+    } catch (error) {
+        // Si ocurre un error, hacer rollback
+        if (connection) await connection.rollback();
+        console.error('Error al eliminar la IP y registros:', error);
+        res.status(500).json({ error: 'Error al eliminar la IP y sus registros.' });
+    } finally {
+        if (connection) connection.release(); // Liberar la conexión de vuelta al pool
+        // Reiniciar el monitoreo y pings continuos después de liberar la conexión
+        //restartMonitoring();
+        iniciarPingsContinuos();
+    }
+});
+
+// Ruta para editar una IP (Editar)
+app.put('/editar/:id', async (req, res) => {
+    const ipId = req.params.id; // Obtener el ID de la IP desde los parámetros de la URL
+    const { nombre, internet1, internet2, url } = req.body; // Desestructurar los datos del cuerpo de la solicitud
+
+    // Validar que los campos no estén vacíos
+    if (!nombre || !url || !internet1 || !internet2) {
+        return res.status(400).json({ error: 'Todos los campos son requeridos.' });
+    }
+
+    let conn;
+    try {
+        conn = await pool.getConnection(); // Obtener la conexión del pool
+
+        // Actualizar la IP en la base de datos
+        const query = `
+            UPDATE ips
+            SET name = ?, url = ?, internet1 = ?, internet2 = ?
+            WHERE id = ?
+        `;
+
+        // Ejecutar la consulta para actualizar los datos en la base de datos
+        const result = await conn.query(query, [nombre, url, internet1, internet2, ipId]);
+
+        // Verificar si realmente se actualizó alguna fila
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'No se encontró ninguna IP con el ID proporcionado.' });
+        }
+
+        // Responder con éxito si todo salió bien
+        res.json({ success: true, message: 'IP actualizada correctamente.' });
+    } catch (error) {
+        console.error('Error al actualizar la IP:', error);
+        res.status(500).json({ error: 'Error interno del servidor.' });
+    } finally {
+        if (conn) conn.release(); // Liberar la conexión
+    }
+});
+
+
+// API para obtener los datos de una IP específica por su ID (Lista IPS Editar, eliminar)
+app.get('/consulta/:id', async (req, res) => {
+    let connection;
+    const ipId = req.params.id;  // Obtiene el ID de la IP desde la URL
+    try {
+        connection = await pool.getConnection();
+        const query = 'SELECT * FROM ips WHERE id = ?';  // Consulta SQL para obtener la IP por ID
+        const rows = await connection.query(query, [ipId]);
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'IP no encontrada' });  // Si no se encuentra la IP, devuelve 404
+        }
+
+        res.json(rows[0]);  // Devuelve los datos de la IP en formato JSON
+    } catch (err) {
+        res.status(500).json({ error: err.toString() });  // Manejo de errores
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// endpoint para obtener las IPs
 app.get('/ips', async (req, res) => {
     let connection;
     try {
@@ -37,19 +202,16 @@ app.get('/ips', async (req, res) => {
     } catch (err) {
         res.status(500).send(err.toString());
     } finally {
-        if (connection) connection.end();
+        if (connection) connection.release();
     }
 });
 
-// API para obtener los logs de ping y calcular la latencia media
+// endpoint para obtener los logs de ping y calcular la latencia media (Reporte)
 app.get('/latency', async (req, res) => {
-    const ipId = req.query.ipId;
-    const startDate = req.query.startDate;
-    const endDate = req.query.endDate;
+    const { ipId, startDate, endDate } = req.query;
 
     if (!ipId || !startDate || !endDate) {
-        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
-        return;
+        return res.status(400).send('ipId, startDate, and endDate query parameters are required.');
     }
 
     let connection;
@@ -60,24 +222,21 @@ app.get('/latency', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ?
         `;
-        const rows = await connection.query(query, [ipId, startDate, endDate]);
-        res.json(rows[0]);
+        const [rows] = await connection.query(query, [ipId, startDate, endDate]); // Desestructurar
+        res.json(rows[0]); // Enviar solo la primera fila
     } catch (err) {
         res.status(500).send(err.toString());
     } finally {
-        if (connection) connection.end();
+        if (connection) connection.release(); // Corregido
     }
 });
 
-// API para contar los paquetes perdidos
+// endpoint para contar los paquetes perdidos (Reporte)
 app.get('/packetloss', async (req, res) => {
-    const ipId = req.query.ipId;
-    const startDate = req.query.startDate;
-    const endDate = req.query.endDate;
+    const { ipId, startDate, endDate } = req.query;
 
     if (!ipId || !startDate || !endDate) {
-        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
-        return;
+        return res.status(400).send('ipId, startDate, and endDate query parameters are required.');
     }
 
     let connection;
@@ -88,32 +247,29 @@ app.get('/packetloss', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND success = 0 AND fecha BETWEEN ? AND ?
         `;
-        const rows = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
         res.json({ packet_loss: Number(rows[0].packet_loss) });
     } catch (err) {
         console.error(err);
         res.status(500).send(err.toString());
     } finally {
-        if (connection) connection.end();
+        if (connection) connection.release(); // Corregido
     }
 });
 
-// API para contar caidas de ping
+// endpoint para contar caidas de ping (Reporte)
 app.get('/downtime', async (req, res) => {
-    const ipId = req.query.ipId;
-    const startDate = req.query.startDate;
-    const endDate = req.query.endDate;
+    const { ipId, startDate, endDate } = req.query;
 
     if (!ipId || !startDate || !endDate) {
-        res.status(400).send('ipId, startDate, and endDate query parameters are required.');
-        return;
+        return res.status(400).send('ipId, startDate, and endDate query parameters are required.');
     }
 
     let connection;
     try {
         connection = await pool.getConnection();
         const query = `
-              WITH DowntimePeriods AS (
+            WITH DowntimePeriods AS (
                 SELECT
                     id,
                     ip_id,
@@ -126,8 +282,8 @@ app.get('/downtime', async (req, res) => {
                     ping_logs
                 JOIN (SELECT @rn := 0, @prev_ip_id := NULL, @prev_success := NULL) AS vars
                 WHERE
-                    ip_id = 3
-                    AND fecha >= NOW() - INTERVAL 24 HOUR
+                    ip_id = ?
+                    AND fecha BETWEEN ? AND ?
             ), DowntimeDetected AS (
                 SELECT
                     MIN(fecha) AS downtime_start,
@@ -177,21 +333,21 @@ app.get('/downtime', async (req, res) => {
             ORDER BY
                 D.downtime_start;
         `;
-        const rows = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
         res.json(rows);
     } catch (err) {
         res.status(500).send(err.toString());
     } finally {
-        if (connection) connection.end();
+        if (connection) connection.release(); // Corregido
     }
 });
 
-// Endpoint para obtener los resultados del ping
+// Endpoint para obtener los resultados del ping (Monitor)
 app.get('/api/ping-results', async (req, res, next) => {
     try {
         const conn = await pool.getConnection();
-        const rows = await conn.query(`
-            SELECT ips.name, ips.ip, ips.url, ping_logs.latency, ping_logs.success
+        const rows = await conn.query(
+            `SELECT name, ip, url, ping_logs.latency, ping_logs.success
             FROM ips
             LEFT JOIN (
                 SELECT ip_id, MAX(id) AS max_id
@@ -208,6 +364,34 @@ app.get('/api/ping-results', async (req, res, next) => {
     }
 });
 
+//Endpoint identificar sucursal caida y mandar a pagina Reporte.html
+app.get('/process-ip', async (req, res) => {
+    const { ip } = req.query;
+
+    if (!ip) {
+        return res.status(400).send('IP is required.');
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        const query = 'SELECT * FROM ips WHERE ip = ?';
+        const [rows] = await connection.query(query, [ip]);
+        connection.release();
+
+        if (rows.length === 0) {
+            return res.status(404).send('IP not found.');
+        }
+
+        // Redirige a Reporte.html con los datos obtenidos como parámetros de consulta
+        res.redirect(`/Reporte.html?data=${encodeURIComponent(JSON.stringify(rows))}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server error.');
+    }
+});
+
+
+/**
 // Endpoint para obtener datos de latencia por IP y rango de fechas y horas
 app.get('/api/latency-data', async (req, res, next) => {
     let { ip, fromDate, fromTime, toDate, toTime } = req.query;
@@ -249,103 +433,18 @@ app.get('/api/latency-data', async (req, res, next) => {
         next(err);
     }
 });
-
-// Endpoint para agregar IPs a la base de datos
-app.post('/addips', async (req, res, next) => {
-    try {
-        const { name, ip, url, internet1, internet2 } = req.body;
-        const conn = await pool.getConnection();
-
-        // Verificar si el nombre ya existe en la base de datos
-        const [nameResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE name = ?", [name]);
-        console.log("Resultado de nameResult:", nameResult[0]);
-        const nameCount = Number(nameResult.count);
-
-        if (nameCount > 0) {
-            conn.release();
-            return res.status(400).json({ error: `El nombre '${name}' ya está registrado.` });
-        }
-
-        // Verificar si la IP ya existe en la base de datos
-        const [ipResult] = await conn.query("SELECT COUNT(*) AS count FROM ips WHERE ip = ?", [ip]);
-        console.log("Resultado de ipResult:", ipResult[0]);
-        const ipCount = Number(ipResult.count);
-
-        if (ipCount > 0) {
-            conn.release();
-            return res.status(400).json({ error: `La IP '${ip}' ya está registrada.` });
-        }
-
-        // Si el nombre y la IP no existen, insertar los datos en la base de datos
-        const query = "INSERT INTO ips (name, ip, url, internet1, internet2) VALUES (?, ?, ?, ?, ?)";
-        await conn.query(query, [name, ip, url || '', internet1 || '', internet2 || '']);
-        conn.release();
-
-        res.json({ message: 'IP agregada correctamente' });
-
-
-        // Reiniciar los monitor caidas-corre
-        restartMonitoring(); // Detener el monitoreo actual
-
-        // Reiniciar los pings continuos
-        clearAllPingIntervals(); // Limpiar todos los intervalos existentes
-        iniciarPingsContinuos(); // Iniciar pings continuos con la lista actualizada de IPs
-    } catch (err) {
-        console.error("Error al procesar la solicitud:", err); // Registrar el error en la consola para depuración
-        return res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
-
-//Endpoint identificar sucursal caida y mandar a pagina Reporte.html
-app.get('/process-ip', async (req, res) => {
-    const ip = req.query.ip;
-
-    if (!ip) {
-        res.status(400).send('IP is required.');
-        return;
-    }
-
-    try {
-        const connection = await pool.getConnection();
-        const query = 'SELECT * FROM ips WHERE ip = ?';
-        const [rows] = await connection.query(query, [ip]);
-
-        connection.release();
-
-        if (rows.length === 0) {
-            res.status(404).send('IP not found.');
-            return;
-        }
-
-        const data = rows;
-
-        // Redirige a prueba.html con los datos obtenidos como parámetros de consulta
-        res.redirect(`/Reporte.html?data=${encodeURIComponent(JSON.stringify(data))}`);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Server error.');
-    }
-});
-
-// Iniciar la carga de IPs al arrancar el servidor
-loadIps();
+*/
 
 // Iniciar los pings continuos al arrancar el servidor
 iniciarPingsContinuos();
 
-// Iniciar sesión de ping al arrancar el servidor
-createPingSession();
-
-// Ejecutar monitorIPs
-startMonitoring();
-
+// Ejecutar monitorIPs activar cuando se empiezan pruebas de correos
+//startMonitoring();
 
 // Ruta principal para servir monitor.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'monitor.html'));
 });
-
-
 
 // Iniciar el servidor en el puerto especificado
 app.listen(port, () => {

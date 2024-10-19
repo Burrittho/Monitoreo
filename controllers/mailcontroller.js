@@ -15,7 +15,7 @@ let monitorInterval;
 async function startMonitoring() {
     while (true) {
         await monitorIPs();
-        await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000)); // Executes monitorIPs every 5 minutes
+        await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000)); // Executes monitorIPs cada 5 minutos
     }
 }
 
@@ -38,12 +38,13 @@ async function monitorIPs() {
     let sistemaup = 0;
     let sistemadown = 0;
     let sistemares = 0;
-
+    
     try {
         connection = await pool.getConnection();
 
         // Obtener todas las IPs registradas
-        const rows = await connection.query('SELECT id, ip, name FROM ips');
+        const [rows] = await connection.query('SELECT id, ip, name FROM ips');
+        listamail =rows;
         const ips = rows.map(row => ({ id: row.id, ip: row.ip, name: row.name }));
 
         console.log('Inicia proceso de monitoreo de caídas');
@@ -70,11 +71,12 @@ async function monitorIPs() {
     } catch (error) {
         console.error('Error en el monitoreo y envío de correos:', error);
     } finally {
-        if (connection) connection.end();
+        if (connection) connection.release();
     }
 
-    // Función para verificar períodos de inactividad y restablecimientos para una IP
-    async function checkLogsForIP(ipRecord, connection) {
+// Función para verificar períodos de inactividad y restablecimientos para una IP
+async function checkLogsForIP(ipRecord, connection) {
+    let listlog;
         const { id: ipId, ip, name } = ipRecord;
 
         // Consulta para obtener los últimos 300 registros de logs para la IP actual
@@ -85,12 +87,13 @@ async function monitorIPs() {
             ORDER BY fecha DESC
             LIMIT 300;
         `;
-        const logs = await connection.query(query, [ipId]);
-        const logsArray = logs.map(log => ({ success: !!log.success, fecha: log.fecha }));
-
+        const [logs] = await connection.query(query, [ipId]);
+        listlog =logs;
+        const logsArray = logs.map(log => ({  success: log.success.readUInt8(0) === 1, fecha: log.fecha }));
+        
         // Verificar si la consulta devolvió resultados
-        if (!logs || logs.length === 0) {
-            console.log(`No se encontraron logs para la IP ${ip}`);
+        if (logsArray.length < 10) {
+            console.log(`No hay suficientes registros para evaluar caídas para la IP ${ip}`);
             return;
         }
 
@@ -99,6 +102,7 @@ async function monitorIPs() {
         // Recorrer los registros de logs para detectar 10 "success = 0" seguidos (caída)
         for (let i = 0; i <= logsArray.length - 10; i++) {
             const successLogs = logsArray.slice(i, i + 10).map(log => log.success);
+            
 
             // Detectar inicio de caída
             if (successLogs.every(success => success === false)) {
@@ -108,7 +112,7 @@ async function monitorIPs() {
                     downIPs[ip] = { name, downtimeStart };
                     await sendMailWithRetry(`Notificacion: ${name} (${ip}) - Sin sistema`, `Inicio de caída de sistema: ${downtimeStart}`);
                     sistemadown++;
-                    break;
+                    break; // Salida temprana cuando se detecta la caída
                 }
             }
 
@@ -123,7 +127,7 @@ async function monitorIPs() {
                 previousState[ipId] = { inDowntime: false, downtimeStart: null };
                 delete downIPs[ip];
                 sistemares++;
-                break;
+                break; // Salida temprana cuando se detecta el restablecimiento
             }
         }
 
@@ -133,7 +137,9 @@ async function monitorIPs() {
         }
     }
 }
+
 module.exports = {
     startMonitoring,
-    restartMonitoring
+    restartMonitoring,
+    stopMonitoring
 };

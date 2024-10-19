@@ -35,19 +35,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const defaultTabId = 'tab-monitor'; // Pestaña por defecto
     showTab(defaultTabId);
 
-  // Deshabilitar combobox cuando se activa el checkbox "Dejar vacío"
-  const checkboxes = document.querySelectorAll('.form-checkbox');
-  checkboxes.forEach(checkbox => {
-      checkbox.addEventListener('change', function() {
-          const inputId = this.id.replace('Empty', '');
-          const inputField = document.getElementById(inputId);
-          if (inputField) {
-              inputField.disabled = this.checked;
-              if (this.checked) {
-                  inputField.value = ''; // Limpiar el valor si se deshabilita
-              }
-          }
-      });
-  });
+});
 
+// Lógica de botones inicio.html GRUB
+document.addEventListener('DOMContentLoaded', () => {
+    // Obtener botones y formularios
+    const btnAdd = document.getElementById('tab-agregar');
+    const btnEdit = document.getElementById('btn-edit');
+    const btnDelete = document.getElementById('btn-delete');
+
+    const formAdd = document.getElementById('form-add');
+    const formEdit = document.getElementById('form-edit');
+    const formDelete = document.getElementById('form-delete');
+
+    // Función para mostrar el formulario seleccionado y ocultar los demás
+    function showForm(selectedForm) {
+        formAdd.classList.add('hidden');
+        formEdit.classList.add('hidden');
+        formDelete.classList.add('hidden');
+
+        selectedForm.classList.remove('hidden');
+    }
+
+    // Asignar eventos a los botones
+    btnAdd.addEventListener('click', () => showForm(formAdd));
+    btnEdit.addEventListener('click', () => showForm(formEdit));
+    btnDelete.addEventListener('click', () => showForm(formDelete));
 });
