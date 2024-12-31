@@ -1,4 +1,4 @@
-//Contenedores para monitor
+﻿//Contenedores para monitor
 document.addEventListener('DOMContentLoaded', async () => {
     let contenedor = [];
     // Obtiene el contenedor donde se mostrarán las IPs
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     resultContainer.className = 'bg-gray-50 dark:bg-gray-800 rounded-lg p-4 shadow-md transition duration-300 ease-in-out transform hover:scale-105';
             
                     // Establece el color de fondo basado en el éxito del ping
-                    if (result.success.data[0] === 1) {
+                    if (result.success) {
                         if (result.latency > 70) {
                             resultContainer.classList.add('bg-yellow-500', 'border-yellow-400', 'hover:bg-yellow-400');
                             yellowContainers.push(resultContainer); // Agregar al array de contenedores amarillos
@@ -45,11 +45,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             
                     // Añade el contenido HTML para mostrar la información del ping
                     resultContainer.innerHTML = `
-                        <a href="${(result.success.data[0] === 1) ? `https://${result.ip}:4434` : `/process-ip?ip=${result.ip}`}" target="_blank">
+                        <a href="${(result.success) ? `https://${result.ip}:4434` : `/process-ip?ip=${result.ip}`}" target="_blank">
                             <div class="text-center block max-w-sm p-6 rounded-lg">
                                 <h5 class="text-2xl font-bold text-white">${result.name}</h5>
                                 <p class="text-sm text-white">${result.ip}</p>
-                                <p class="font-bold text-sm text-white">${(result.success.data[0] === 1) ? `${result.latency} ms` : 'Host no alcanzable'}</p>
+                                <p class="font-bold text-sm text-white">${(result.success) ? `${result.latency} ms` : 'Host no alcanzable'}</p>
                             </div>
                         </a>
                     `;

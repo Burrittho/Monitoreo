@@ -10,7 +10,7 @@ const pingOptions = {
     networkProtocol: ping.NetworkProtocol.IPv4,
     packetSize: 64,
     retries: 3,
-    timeout: 3000,
+    timeout: 1000,
     ttl: 64
 };
 
@@ -29,7 +29,7 @@ function createPingSession() {
             // Lógica adicional para reiniciar la sesión
             console.log('Reiniciando la sesión de ping...');
             session.close(); // Cerrar la sesión existente
-            createPingSession(); // Crear una nueva sesión de ping
+           setTimeout(createPingSession, 5000);// Crear una nueva sesión de ping
         });
 
         console.log('Sesión de ping creada exitosamente.');
@@ -43,6 +43,8 @@ function createPingSession() {
 function clearAllPingIntervals() {
     pingIntervals.forEach(({ intervalId }) => clearInterval(intervalId));
     pingIntervals = [];
+
+    console.log('Se detiene sesion para monitor');
 }
 
 // Función para hacer ping a una IP utilizando la sesión de ping

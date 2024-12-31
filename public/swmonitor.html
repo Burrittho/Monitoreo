@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoreo de Puertos del Switch</title>
+  <script src="../utils/monitorports.js"></script> <!-- Asegúrate de que el archivo monitorPorts.js esté en el mismo directorio -->
+  <style>
+    .port {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      margin: 5px;
+      text-align: center;
+      line-height: 40px;
+      color: #fff;
+      font-weight: bold;
+      border-radius: 5px;
+    }
+    .online { background-color: #28a745; } /* Verde para online */
+    .offline { background-color: #dc3545; } /* Rojo para offline */
+  </style>
+</head>
+<body>
+  <h1>Monitoreo de Puertos del Switch</h1>
+  
+  <form id="portMonitorForm">
+    <label for="ip">IP del Switch:</label>
+    <input type="text" id="ip" required>
+    
+    <label for="community">Comunidad SNMP:</label>
+    <input type="text" id="community" required>
+
+    <label for="snmpVersion">Versión de SNMP:</label>
+    <select id="snmpVersion">
+        <option value="1">SNMPv1</option>
+        <option value="2">SNMPv2c</option>
+      </select>
+      
+
+    <button type="button" onclick="startMonitoring()">Iniciar Monitoreo</button>
+  </form>
+
+  <div id="portStatusContainer"></div>
+</body>
+</html>

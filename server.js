@@ -1,8 +1,9 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const pool = require('./config/db'); // Importamos el pool de conexiones desde db.js
 const routes = require('./routes/routes');
 const path = require('path');
+//const { Session } = require('snmp-native');
 const { startMonitoring, restartMonitoring, stopMonitoring } = require('./controllers/mailcontroller');
 const {iniciarPingsContinuos, createPingSession, clearAllPingIntervals} = require('./models/ping');
 
@@ -30,11 +31,34 @@ function validateQueryParams(req, res, next) {
 }
 
 // Middleware para servir archivos estáticos desde la carpeta public
+app.use('/utils', express.static(path.join(__dirname, 'utils')));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // Usamos las rutas definidas en routes.js
 app.use('/', routes);
+
+//Endpoint SNMP
+app.post('/api/monitor-ports', (req, res) => {
+    try {
+      const { ip, community, snmpVersion } = req.body;
+  
+      // Log para verificar los valores recibidos
+      console.log("Valores recibidos:", { ip, community, snmpVersion });
+  
+      if (![1, 2].includes(snmpVersion)) {
+        console.error("Valor de snmpVersion no válido:", snmpVersion);
+        return res.status(400).json({ error: "Solo se soportan SNMPv1 y SNMPv2c" });
+      }
+  
+      const session = new Session({ host: ip, community: community, version: snmpVersion });
+      // Código de monitoreo aquí
+    } catch (err) {
+      console.error("Error en /api/monitor-ports:", err);
+      res.status(500).json({ error: "Error interno del servidor al monitorear puertos" });
+    }
+  });
+  
 
 // Endpoint para agregar IPs a la base de datos (Agregar)
 app.post('/addips', async (req, res, next) => {
@@ -85,7 +109,7 @@ app.delete('/delete/:id', async (req, res) => {
     let connection;
     try {
         // Detener monitoreo y limpiar pings
-        stopMonitoring();
+        //stopMonitoring();
         clearAllPingIntervals();
 
         // Obtener una conexión del pool
