@@ -2,10 +2,10 @@
 
 const connection = mysql.createConnection({
     host: 'localhost',
-    port: 3306,
+    port: 420,
     user: 'root',
     password: 'Dinosaurio2314.',
-    database: 'ping_monitor'
+    database: 'monitor'
 });
 
 connection.connect((err) => {

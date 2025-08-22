@@ -4,7 +4,7 @@ const pool = require('../config/db'); // Tu pool de conexiones MySQL
 // Función para obtener la lista de IPs desde la base de datos
 async function obtenerIPs() {
     const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT ip FROM ips');
+    const [rows] = await conn.query('SELECT ip FROM ips_dvr');
     conn.release();
     return rows.map(row => row.ip);
 }
@@ -58,14 +58,14 @@ async function guardarPingEnBD(ip, latency, alive) {
     let conn;
     try {
         conn = await pool.getConnection();
-        const [ipIdRow] = await conn.query("SELECT id FROM ips WHERE ip = ?", [ip]);
+        const [ipIdRow] = await conn.query("SELECT id FROM ips_dvr WHERE ip = ?", [ip]);
         if (!ipIdRow || ipIdRow.length === 0) {
             console.error(`No se encontró el id de la IP ${ip}`);
             return;
         }
         const ipId = ipIdRow[0].id;
         await conn.query(
-            "INSERT INTO ping_logs (ip_id, latency, success) VALUES (?, ?, ?)",
+            "INSERT INTO ping_logs_dvr (ip_id, latency, success) VALUES (?, ?, ?)",
             [ipId, latency, alive ? 1 : 0]
         );
     } catch (err) {
@@ -76,8 +76,8 @@ async function guardarPingEnBD(ip, latency, alive) {
 }
 
 // Función principal de monitoreo continuo
-async function iniciarPingsContinuos() {
-    console.log('Servicio de monitoreo iniciado.');
+async function iniciarPings_dvrContinuos() {
+    console.log('Servicio de monitoreo_DVR iniciado.');
     
     // Iniciamos el intervalo de ping
     setInterval(async () => {
@@ -99,5 +99,5 @@ async function iniciarPingsContinuos() {
 
 // Exporta la función principal
 module.exports = {
-    iniciarPingsContinuos
+    iniciarPings_dvrContinuos
 };
