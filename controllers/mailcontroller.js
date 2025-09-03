@@ -10,7 +10,10 @@ const CHECK_INTERVAL = 30000; // 30 segundos
 const THRESHOLD_UP = 60000; // 60 segundos
 
 // Número de éxitos consecutivos requeridos para considerar el sistema como UP
-const CONSECUTIVE_SUCCESSES_REQUIRED = 3;
+let CONSECUTIVE_SUCCESSES_REQUIRED = 3;
+let CONSECUTIVE_FAILURES_REQUIRED = 3;
+let SEQUENCE_WINDOW_MINUTES = 10;
+let THRESHOLD_DOWN = 60000; // 60 segundos
 
 // Estados del sistema N+1 (diferentes del sistema original)
 const STATE_UP = 'UP';
@@ -288,7 +291,40 @@ async function startWorker(poolConnection) {
   
   // Asignar el pool recibido al módulo
   pool = poolConnection;
-  
+
+  // Leer configuración dinámica desde la base de datos
+  try {
+    const conn = await pool.getConnection();
+    const [rows] = await conn.query(
+      "SELECT clave, valor FROM config WHERE clave IN ('minutos_consecutivos_requeridos', 'tiempo_ventana_minutos', 'fallos_consecutivos_requeridos', 'umbral_caida_minutos')"
+    );
+    conn.release();
+    rows.forEach(row => {
+      switch(row.clave) {
+        case 'minutos_consecutivos_requeridos':
+          CONSECUTIVE_SUCCESSES_REQUIRED = parseInt(row.valor) || CONSECUTIVE_SUCCESSES_REQUIRED;
+          break;
+        case 'fallos_consecutivos_requeridos':
+          CONSECUTIVE_FAILURES_REQUIRED = parseInt(row.valor) || CONSECUTIVE_FAILURES_REQUIRED;
+          break;
+        case 'tiempo_ventana_minutos':
+          SEQUENCE_WINDOW_MINUTES = parseInt(row.valor) || SEQUENCE_WINDOW_MINUTES;
+          break;
+        case 'umbral_caida_minutos':
+          THRESHOLD_DOWN = (parseInt(row.valor) || (THRESHOLD_DOWN/60000)) * 60 * 1000;
+          break;
+      }
+    });
+    console.log('[N+1] Configuración dinámica aplicada:', {
+      CONSECUTIVE_SUCCESSES_REQUIRED,
+      CONSECUTIVE_FAILURES_REQUIRED,
+      SEQUENCE_WINDOW_MINUTES,
+      THRESHOLD_DOWN
+    });
+  } catch (err) {
+    console.error('Error leyendo configuración dinámica N+1:', err);
+  }
+
   await initializeHostStates();
   console.log('Estado inicial de hosts cargado desde DB');
 
