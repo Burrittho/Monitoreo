@@ -6,6 +6,9 @@ let pool = null;
 // Configuración de intervalos
 const CHECK_INTERVAL = 30000; // 30 segundos
 
+// Umbral de tiempo mínimo en recuperación para considerar el sistema como UP (en ms)
+const THRESHOLD_UP = 60000; // 60 segundos
+
 // Estados del sistema N+1 (diferentes del sistema original)
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';

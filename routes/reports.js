@@ -273,7 +273,7 @@ router.post('/crear-reporte', async (req, res) => {
     if(process.env.NODE_ENV !== 'production'){
       console.log('[REPORTES] Crear reporte payload recibido:', req.body);
     }
-    const { sucursal_id, proveedor, prioridad, numero_ticket, notas_tecnicas } = req.body;
+    const { sucursal_id, proveedor, prioridad, numero_ticket } = req.body;
     if(!sucursal_id || !proveedor){
       return res.status(400).json({ success:false, error:'Faltan campos obligatorios sucursal_id o proveedor' })
     }
@@ -290,9 +290,9 @@ router.post('/crear-reporte', async (req, res) => {
     // titulo y descripcion deprecados: insertar vacío solo si columnas NOT NULL existen
     const [result] = await pool.execute(`
         INSERT INTO reportes_internet (
-            sucursal_id, tipo_internet, proveedor, titulo, descripcion, prioridad, numero_ticket, notas_tecnicas, estado, fecha_reporte, fecha_incidencia
-        ) VALUES (?,?,?,?,?,?,?,?, 'abierto', NOW(), NOW())
-    `, [sucursal_id, tipo_internet, proveedor.trim(), '', '', prioridad, numero_ticket, notas_tecnicas]);
+            sucursal_id, tipo_internet, proveedor, titulo, descripcion, prioridad, numero_ticket, estado, fecha_reporte, fecha_incidencia
+        ) VALUES (?,?,?,?,?,?,?, 'abierto', NOW(), NOW())
+    `, [sucursal_id, tipo_internet, proveedor.trim(), '', '', prioridad, numero_ticket]);
     res.json({ id: result.insertId, message: 'Reporte creado', tipo_internet });
   } catch (error) {
       console.error('Error creando reporte:', error.code, error.sqlMessage, error.sql);
@@ -325,20 +325,20 @@ router.get('/reportes', async (req, res) => {
         }
         if (sucursal) { whereClause += ' AND (i.name LIKE ? OR i.ip LIKE ?)'; params.push(`%${sucursal}%`,`%${sucursal}%`); }
         if (proveedor) { whereClause += ' AND ri.proveedor LIKE ?'; params.push(`%${proveedor}%`); }
-        const [reportes] = await pool.execute(`
-            SELECT 
-              ri.id, ri.sucursal_id, ri.tipo_internet, ri.proveedor, ri.prioridad, ri.numero_ticket, ri.notas_tecnicas,
-              ri.estado,
-              ri.fecha_reporte, ri.fecha_incidencia, ri.fecha_resolucion,
-              i.name as sucursal_nombre,
-              CASE WHEN ri.tipo_internet='primario' THEN pi.cuenta_primario WHEN ri.tipo_internet='secundario' THEN pi.cuenta_secundario ELSE NULL END AS cuenta
-            FROM reportes_internet ri
-            LEFT JOIN ips i ON ri.sucursal_id = i.id
-            LEFT JOIN proveedores_internet pi ON pi.sucursal_id = ri.sucursal_id
-            WHERE ${whereClause}
-            ORDER BY ri.fecha_reporte DESC
-            LIMIT ${limitNum} OFFSET ${offset}
-        `, params);
+                const [reportes] = await pool.execute(`
+                        SELECT 
+                            ri.id, ri.sucursal_id, ri.tipo_internet, ri.proveedor, ri.prioridad, ri.numero_ticket,
+                            ri.estado,
+                            ri.fecha_reporte, ri.fecha_incidencia, ri.fecha_resolucion,
+                            i.name as sucursal_nombre,
+                            CASE WHEN ri.tipo_internet='primario' THEN pi.cuenta_primario WHEN ri.tipo_internet='secundario' THEN pi.cuenta_secundario ELSE NULL END AS cuenta
+                        FROM reportes_internet ri
+                        LEFT JOIN ips i ON ri.sucursal_id = i.id
+                        LEFT JOIN proveedores_internet pi ON pi.sucursal_id = ri.sucursal_id
+                        WHERE ${whereClause}
+                        ORDER BY ri.fecha_reporte DESC
+                        LIMIT ${limitNum} OFFSET ${offset}
+                `, params);
         const [countResult] = await pool.execute(`
             SELECT COUNT(*) as total FROM reportes_internet ri LEFT JOIN ips i ON ri.sucursal_id=i.id WHERE ${whereClause}
         `, params);
@@ -384,7 +384,7 @@ router.put('/reporte/:id', async (req, res) => {
         // Campos permitidos para actualizar
         const allowedFields = [
             'titulo', 'descripcion', 'prioridad', 'estado', 
-            'numero_ticket', 'notas_tecnicas', 'fecha_resolucion'
+            'numero_ticket', 'fecha_resolucion'
         ];
         
         const fieldsToUpdate = Object.keys(updateFields).filter(field => allowedFields.includes(field));
