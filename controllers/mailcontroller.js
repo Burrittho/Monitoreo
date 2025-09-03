@@ -1,39 +1,19 @@
-// --- Configuración general ---
-// Flujo de transiciones de estado:
-// 
-// Estados de transición (requieren un solo ping de cambio):
-// - UP → UNSTABLE: Al detectar el primer ping fallido
-// - DOWN → RECOVERING: Al detectar el primer ping exitoso después de caída
-//
-// Estados confirmados (requieren secuencia de pings consecutivos):
-// - UNSTABLE → DOWN: Requiere secuencia de fallos consecutivos + tiempo mínimo
-// - RECOVERING → UP: Requiere secuencia de éxitos consecutivos + tiempo mínimo
-//
-// Recuperaciones rápidas:
-// - UNSTABLE → UP: Si se recupera antes de confirmarse DOWN (primer ping exitoso)
-// - RECOVERING → DOWN: Si vuelve a fallar durante la recuperación (primer ping fallido)
-
-const pool = require('../config/db');
 const { sendMailWithRetry } = require('../models/mailretry');
 
-// Estados posibles
+// Variable para el pool de conexiones
+let pool = null;
+
+// Configuración de intervalos
+const CHECK_INTERVAL = 30000; // 30 segundos
+
+// Estados del sistema N+1 (diferentes del sistema original)
 const STATE_UP = 'UP';
-const STATE_UNSTABLE = 'UNSTABLE';
 const STATE_DOWN = 'DOWN';
-const STATE_RECOVERING = 'RECOVERING';
+const STATE_UNSTABLE = 'UNSTABLE';
 
-// Umbrales (en ms) - AJUSTA A PRODUCCION
-const THRESHOLD_DOWN = 1 * 60 * 1000; // 1 min para pruebas
-const THRESHOLD_UP = 2 * 60 * 1000;   // 2 min para pruebas
-const CHECK_INTERVAL = 60 * 1000;     // 1 min
-const CONSECUTIVE_FAILURES_REQUIRED = 5;
-const CONSECUTIVE_SUCCESSES_REQUIRED = 5;
-const SEQUENCE_WINDOW_MINUTES = 2;
-
-// Control de debouncing y redundancia
-const MIN_TIME_BETWEEN_NOTIFICATIONS = 5 * 60 * 1000; // 5 min mínimo entre notificaciones del mismo tipo
-
-const hostsStatus = {};
+// Cache de configuración y estados
+let config = {};
+let hostsStatus = {};
 
 // --- FUNCIONES AUXILIARES ---
 function formatDuration(ms) {
@@ -296,8 +276,12 @@ async function persistHostState(ipId, state, unstableSince, downSince, upSince, 
 }
 
 // Worker principal
-async function startWorker() {
+async function startWorker(poolConnection) {
   console.log('Iniciando servicio de monitoreo de estado...');
+  
+  // Asignar el pool recibido al módulo
+  pool = poolConnection;
+  
   await initializeHostStates();
   console.log('Estado inicial de hosts cargado desde DB');
 

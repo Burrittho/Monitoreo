@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import logoLB from '../../Images/L+B.png';
 
 export default function Header() {
   useEffect(() => {
@@ -23,16 +24,12 @@ export default function Header() {
           <button className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" onClick={() => document.dispatchEvent(new CustomEvent('toggleSidebarMobile'))}>
             <i className="fas fa-bars"></i>
           </button>
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <i className="fas fa-network-wired text-white text-sm"></i>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+            <img src={logoLB} alt="L+B" className="w-8 h-8 rounded-lg" />
           </div>
-          <h1 className="text-xl font-semibold">Monitor de Sucursales</h1>
+          <h1 className="text-xl font-semibold">IT Monitoreo</h1>
         </div>
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 dark:bg-green-900/30 rounded-full">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium text-green-700 dark:text-green-300">Sistema Activo</span>
-          </div>
           <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" onClick={toggleTheme}>
             <i className="fas fa-moon"></i>
           </button>

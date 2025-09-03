@@ -149,31 +149,39 @@ router.get('/downtime', async (req, res) => {
         if (pingData.length === 0) {
             return res.json([]);
         }
+
+        // Verificar si todos los datos son success=0 (sin datos suficientes)
+        let allFailures = true;
+        for (let i = 0; i < pingData.length; i++) {
+            if (pingData[i].success === 1) {
+                allFailures = false;
+                break;
+            }
+        }
+
+        // Si todos son fallos y hay pocos datos, considerarlo como "sin datos suficientes"
+        if (allFailures && pingData.length < 20) {
+            return res.json([{
+                downtime_start: startDate,
+                downtime_end: endDate,
+                downtime_duration: 'N/A',
+                status: 'insufficient_data',
+                message: 'No hay datos suficientes para determinar incidencias'
+            }]);
+        }
         
         // Buscar si había una caída activa antes del rango
+        // Optimización: buscar solo los últimos 10 registros para verificar caída activa
         const [priorData] = await connection.query(`
-            SELECT success, fecha
+            SELECT success
             FROM ping_logs
             WHERE ip_id = ? AND fecha < ?
             ORDER BY fecha DESC
-            LIMIT 100
+            LIMIT 10
         `, [ipId, startDate]);
         
         // Verificar si hay caída activa al inicio del período
-        let activeOutageAtStart = false;
-        let consecutivePriorFailures = 0;
-        
-        for (let i = 0; i < priorData.length; i++) {
-            if (priorData[i].success === 0) {
-                consecutivePriorFailures++;
-            } else {
-                break; // Salir al encontrar el primer éxito
-            }
-        }
-        
-        if (consecutivePriorFailures >= 10) {
-            activeOutageAtStart = true;
-        }
+        let activeOutageAtStart = priorData.length >= 10 && priorData.every(row => row.success === 0);
         
         // Procesar los datos para encontrar intervalos de caída
         const intervals = [];
@@ -183,6 +191,7 @@ router.get('/downtime', async (req, res) => {
         let failRunStartTime = null;
         let outageStart = activeOutageAtStart ? startDate : null;
         let lastFailureTime = null;
+        let incidentsCount = 0;
 
         for (let i = 0; i < pingData.length; i++) {
             const { success, fecha } = pingData[i];
@@ -199,6 +208,7 @@ router.get('/downtime', async (req, res) => {
                 if (!inOutage && failRun >= 10) {
                     inOutage = true;
                     outageStart = failRunStartTime || ts;
+                    incidentsCount++;
                 }
             } else {
                 // éxito
@@ -226,7 +236,8 @@ router.get('/downtime', async (req, res) => {
                         downtime_start: outageStart,
                         downtime_end: outageEnd,
                         downtime_duration: durationString.trim(),
-                        status: 'completed'
+                        status: 'completed',
+                        incident_number: incidentsCount
                     });
 
                     // reset de estado de caída
@@ -255,7 +266,21 @@ router.get('/downtime', async (req, res) => {
                 downtime_start: outageStart,
                 downtime_end: outageEnd,
                 downtime_duration: durationString.trim(),
-                status: activeOutageAtStart ? 'ongoing_throughout' : 'ongoing_started'
+                status: activeOutageAtStart ? 'ongoing_throughout' : 'ongoing_started',
+                incident_number: incidentsCount
+            });
+        }
+        
+        // Si después de revisar, no encontramos caídas, pero todos son fallos, 
+        // se trata de un periodo de caída completa
+        if (intervals.length === 0 && allFailures && pingData.length >= 20) {
+            intervals.push({
+                downtime_start: startDate,
+                downtime_end: endDate,
+                downtime_duration: 'Todo el período',
+                status: 'complete_outage',
+                message: 'Caída durante todo el período analizado',
+                incident_number: 1
             });
         }
         
@@ -325,7 +350,6 @@ router.get('/ping-results', async (req, res, next) => {
                 ips.id, 
                 ips.name, 
                 ips.ip, 
-                ips.url, 
                 IFNULL(ping_logs.latency, 0) as latency, 
                 IFNULL(ping_logs.success, 0) as success,
                 ping_logs.fecha as last_ping_time
@@ -361,7 +385,6 @@ router.get('/current-outages', async (req, res, next) => {
                 ips.id,
                 ips.name,
                 ips.ip,
-                ips.url,
                 host_state.state,
                 host_state.down_since,
                 host_state.unstable_since,

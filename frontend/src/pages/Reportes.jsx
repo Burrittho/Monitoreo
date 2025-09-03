@@ -11,7 +11,6 @@ import ReportDetailModal from '../components/reportes/ReportDetailModal'
 import InternetTable from '../components/internet/InternetTable'
 import ServicesTable from '../components/servicios/ServicesTable'
 import { normalizeReporte, normalizeInternetRow } from '../utils/normalize'
-import InternetFilters from '../components/internet/InternetFilters'
 import ServicesFilters from '../components/servicios/ServicesFilters'
 
 function SectionTabs({ section, setSection, reportCount = 0 }) {
@@ -98,9 +97,8 @@ export default function Reportes() {
   const [internetError, setInternetError] = useState('')
   const [internetPage, setInternetPage] = useState(1)
   const [internetLimit, setInternetLimit] = useState(10) // default 10
-  // Filtros (máximo 2 activos a la vez)
-  const [filter1, setFilter1] = useState({ field: '', value: '' })
-  const [filter2, setFilter2] = useState({ field: '', value: '' })
+  // Filtro simple por sucursal
+  const [internetSucursalFilter, setInternetSucursalFilter] = useState('')
 
   async function loadInternet() {
     try {
@@ -114,7 +112,46 @@ export default function Reportes() {
     } catch (e) { setInternetError(e.message) } finally { setInternetLoading(false) }
   }
 
-  useEffect(()=>{ if(section==='check-internet') loadInternet() }, [section])
+  // Servicios
+  const [allServicesData, setAllServicesData] = useState([]) // Todos los datos
+  const [servicesLoading, setServicesLoading] = useState(false)
+  const [servicesError, setServicesError] = useState('')
+  const [servicesFilters, setServicesFilters] = useState({ sucursal: '', search: '' })
+  const [servicesPage, setServicesPage] = useState(1)
+  
+  // Modal para detalles de servicios
+  const [selectedService, setSelectedService] = useState(null)
+  const [showModal, setShowModal] = useState(false)
+
+  // Reportes
+  const [reportes, setReportes] = useState([])
+  const [reportesLoading, setReportesLoading] = useState(false)
+  const [reportesError, setReportesError] = useState('')
+  const [sucursales, setSucursales] = useState([])
+  const [form, setForm] = useState({ sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', notas_tecnicas:'' })
+  const [creating, setCreating] = useState(false)
+  const [createMsg, setCreateMsg] = useState({ type:'', text:'' })
+  const [detalleReporte, setDetalleReporte] = useState(null)
+  const [concluding, setConcluding] = useState(false)
+  const [reportesFilterEstado, setReportesFilterEstado] = useState('abierto') // abierto | concluido
+  const [filterSucursal, setFilterSucursal] = useState('')
+  const { providers: providersSucursal, account: selectedProviderAccount, select: selectProvider } = useProvidersSucursal(form.sucursal_id)
+
+  // useEffect principal - después de todas las declaraciones de estado
+  useEffect(()=>{ 
+    if(section==='check-internet') {
+      loadInternet();
+      if(sucursales.length===0) loadSucursales();
+    }
+    if(section==='servicios-internet') {
+      loadServices();
+      if(sucursales.length===0) loadSucursales();
+    }
+    if(section==='reportes-incidencias'){ 
+      loadReportes(); 
+      if(sucursales.length===0) loadSucursales() 
+    } 
+  }, [section, reportesFilterEstado, filterSucursal])
 
   // Replace manual sorting with useSortable for internetData
   const sortAccessors = {
@@ -131,7 +168,16 @@ export default function Reportes() {
     estadoSec: r => (r.estado_secundario || 'zzz').toLowerCase(),
     fecha: r => (r.fecha ? new Date(r.fecha).getTime() : 0)
   }
-  const { data: sortedInternet, sortField, sortDir, toggleSort } = useSortable(internetData, sortAccessors, { defaultField:'sucursal', filters:[filter1, filter2] })
+  
+  // Filtrar por sucursal si está seleccionada
+  const filteredInternetData = useMemo(() => {
+    if (!internetSucursalFilter) return internetData;
+    return internetData.filter(item => 
+      item.sucursal_id === parseInt(internetSucursalFilter)
+    );
+  }, [internetData, internetSucursalFilter]);
+  
+  const { data: sortedInternet, sortField, sortDir, toggleSort } = useSortable(filteredInternetData, sortAccessors, { defaultField:'sucursal' })
   const totalInternet = sortedInternet.length
   const paginatedInternet = useMemo(()=>{ const start=(internetPage-1)*internetLimit; return sortedInternet.slice(start, start+internetLimit) }, [sortedInternet, internetPage, internetLimit])
 
@@ -147,17 +193,6 @@ export default function Reportes() {
     )
   }
 
-  // Servicios
-  const [allServicesData, setAllServicesData] = useState([]) // Todos los datos
-  const [servicesLoading, setServicesLoading] = useState(false)
-  const [servicesError, setServicesError] = useState('')
-  const [servicesFilters, setServicesFilters] = useState({ sucursal: '', search: '' })
-  const [servicesPage, setServicesPage] = useState(1)
-  
-  // Modal para detalles de servicios
-  const [selectedService, setSelectedService] = useState(null)
-  const [showModal, setShowModal] = useState(false)
-  
   // Filtrar y paginar servicios del lado del cliente
   const filteredServicesData = useMemo(() => {
     let filtered = allServicesData;
@@ -218,19 +253,7 @@ export default function Reportes() {
     setShowModal(false)
   }
 
-  // Reportes
-  const [reportes, setReportes] = useState([])
-  const [reportesLoading, setReportesLoading] = useState(false)
-  const [reportesError, setReportesError] = useState('')
-  const [sucursales, setSucursales] = useState([])
-  const [form, setForm] = useState({ sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', notas_tecnicas:'' })
-  const [creating, setCreating] = useState(false)
-  const [createMsg, setCreateMsg] = useState({ type:'', text:'' })
-  const [detalleReporte, setDetalleReporte] = useState(null)
-  const [concluding, setConcluding] = useState(false)
-  const [reportesFilterEstado, setReportesFilterEstado] = useState('abierto') // abierto | concluido
-  const [filterSucursal, setFilterSucursal] = useState('')
-  const { providers: providersSucursal, account: selectedProviderAccount, select: selectProvider } = useProvidersSucursal(form.sucursal_id)
+  // (Variables de reportes ya declaradas arriba - eliminando duplicados)
 
   async function loadReportes(){
     try {
@@ -311,18 +334,12 @@ export default function Reportes() {
   async function doConclude(){ try { setConcluding(true); await apiPost(`/api/reports/reporte/${confirmData.id}/concluir`, {}); setDetalleReporte(null); setConfirmData({open:false,id:null}); loadReportes(); } catch(e){ console.error(e) } finally { setConcluding(false) } }
 
   const activeReportsCount = useMemo(()=> reportes.filter(r=>r.estado !== REPORT_STATUS.CONCLUIDO).length, [reportes])
+  
+  // Resetear página cuando cambian los filtros de internet
+  useEffect(() => {
+    setInternetPage(1);
+  }, [internetSucursalFilter]);
   function estadoBadgeClass(estado){ const s=(estado||'').toLowerCase(); if(s===REPORT_STATUS.ABIERTO) return 'bg-red-100 text-red-800'; if(s===REPORT_STATUS.CERRADO) return 'bg-green-100 text-green-800'; return 'bg-gray-100 text-gray-800' }
-
-  useEffect(()=>{ 
-    if(section==='servicios-internet') {
-      loadServices();
-      if(sucursales.length===0) loadSucursales();
-    }
-    if(section==='reportes-incidencias'){ 
-      loadReportes(); 
-      if(sucursales.length===0) loadSucursales() 
-    } 
-  }, [section, reportesFilterEstado, filterSucursal])
   
   // Resetear página cuando cambian los filtros de servicios
   useEffect(() => {
@@ -371,29 +388,33 @@ export default function Reportes() {
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Estado de Conexiones</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Monitoreo en tiempo real del estado de conectividad</p>
               </div>
-              <select 
-                value={internetLimit} 
-                onChange={e => {setInternetLimit(Number(e.target.value)); setInternetPage(1)}} 
-                className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value={10}>10 filas</option>
-                <option value={20}>20 filas</option>
-                <option value={30}>30 filas</option>
-                <option value={50}>50 filas</option>
-              </select>
+              <div className="flex items-center space-x-4">
+                <select 
+                  value={internetSucursalFilter} 
+                  onChange={e => setInternetSucursalFilter(e.target.value)}
+                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Todas las sucursales</option>
+                  {sucursales.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <select 
+                  value={internetLimit} 
+                  onChange={e => {setInternetLimit(Number(e.target.value)); setInternetPage(1)}} 
+                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value={10}>10 filas</option>
+                  <option value={20}>20 filas</option>
+                  <option value={30}>30 filas</option>
+                  <option value={50}>50 filas</option>
+                </select>
+              </div>
             </div>
           </div>
           <div className="p-6">
-            <div className="mb-6">
-              <InternetFilters 
-                filter1={filter1} 
-                setFilter1={setFilter1} 
-                filter2={filter2} 
-                setFilter2={setFilter2} 
-                data={internetData}
-                onClear={() => {setFilter1({field:'',value:''}); setFilter2({field:'',value:''})}} 
-              />
-            </div>
             <InternetTable 
               data={paginatedInternet} 
               loading={internetLoading} 
@@ -538,11 +559,11 @@ export default function Reportes() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{reportes.length} reportes registrados ({activeReportsCount} activos)</p>
                 </div>
                 <div className="flex items-center space-x-4">
-                  <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+                  <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-700">
                     <button
-                      className={`px-4 py-2 text-sm font-medium ${
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
                         reportesFilterEstado === 'abierto'
-                          ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700' 
+                          ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700' 
                           : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
                       }`}
                       onClick={() => setReportesFilterEstado('abierto')}
@@ -550,21 +571,21 @@ export default function Reportes() {
                       Abiertos ({activeReportsCount})
                     </button>
                     <button
-                      className={`px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-600 ${
+                      className={`px-4 py-2 text-sm font-medium border-l border-gray-300 dark:border-gray-600 transition-colors ${
                         reportesFilterEstado === 'concluido'
-                          ? 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700'
+                          ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700'
                           : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
                       }`}
                       onClick={() => setReportesFilterEstado('concluido')}
                     >
-                      Concluidos
+                      Concluidos ({reportes.length - activeReportsCount})
                     </button>
                   </div>
                   {sucursales.length > 0 && (
                     <select 
                       value={filterSucursal} 
                       onChange={e => setFilterSucursal(e.target.value)} 
-                      className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 shadow-sm"
                     >
                       <option value="">Todas las sucursales</option>
                       {sucursales.map(s => (

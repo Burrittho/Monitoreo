@@ -9,14 +9,15 @@ const config = require('./routes/config'); // Importa la configuración
 const {iniciarPingsContinuos} = require('./models/ping'); // Importa la función para iniciar pings
 const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Importa la función para iniciar pings para DVR
 const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); // Importa la función para iniciar pings para servidores
-const {startWorker} = require('./controllers/mailcontroller'); // Importa la función para iniciar el worker
+const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
 const path = require('path'); // path para manejar rutas de archivos
 const fs = require('fs'); // fs para verificar la existencia de archivos
+const pool = require('./config/db'); // Importa la configuración de la base de datos
 
 // Crear una instancia de Express
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware para servir archivos estáticos y parsear JSON
 app.use(express.json()); 
@@ -94,8 +95,8 @@ app.use((req, res) => {
     }
 });
 
-//  Iniciar el worker para monitorear el estado de los hosts
-startWorker();
+//  Iniciar el sistema de monitoreo N+1 (reemplaza al sistema antiguo)
+startWorker(pool);
 
 // Iniciar los pings continuos al arrancar el servidor
 iniciarPingsContinuos();

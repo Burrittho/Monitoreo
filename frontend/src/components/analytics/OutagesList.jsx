@@ -96,29 +96,6 @@ export default function OutagesList({ outages, stats }) {
         </div>
       )}
       
-      {/* Información explicativa mejorada */}
-      {outages.length > 0 && (
-        <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-            <i className="fas fa-info-circle mr-1"/>
-            <strong>Detección de incidencias:</strong> Se detecta una caída tras 10 pings consecutivos fallidos y se considera terminada tras 10 pings consecutivos exitosos.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-            <div className="flex items-center gap-1">
-              <i className="fas fa-check-circle text-gray-600 dark:text-gray-400"/>
-              <span className="text-gray-600 dark:text-gray-400">Completado: Incidencia que inició y terminó en el período</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <i className="fas fa-exclamation-triangle text-amber-600 dark:text-amber-400"/>
-              <span className="text-gray-600 dark:text-gray-400">Iniciado: Incidencia que comenzó en el período pero aún continúa</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <i className="fas fa-exclamation-circle text-red-600 dark:text-red-400"/>
-              <span className="text-gray-600 dark:text-gray-400">Activo: Sistema caído durante todo el período seleccionado</span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

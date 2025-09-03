@@ -20,7 +20,6 @@
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
     "mysql2": "^3.13.0",
-    "net-ping": "^1.2.4",
     "nodemailer": "^6.10.0",
     "raw-socket": "^1.8.1"
   }

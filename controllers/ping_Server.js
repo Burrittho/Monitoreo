@@ -9,45 +9,56 @@ async function obtenerIPs() {
     return rows.map(row => row.ip);
 }
 
-// Función para hacer ping a todas las IPs usando fping en WSL
-async function hacerPingWSL(ips) {
+// Función para hacer ping a todas las IPs usando fping nativo de Ubuntu
+async function hacerPingUbuntu(ips) {
     return new Promise((resolve, reject) => {
         if (!ips.length) return resolve([]);
 
-        // Preparamos el comando WSL con fping (¡la magia está aquí!)
-        const comando = `wsl fping -c1 -t1500 ${ips.join(' ')}`;
+        // Comando para Ubuntu nativo (SIN wsl)
+        const comando = `wsl fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
 
         exec(comando, (error, stdout, stderr) => {
-            const output = stderr || stdout;
+            const output = stdout || stderr;
             const resultados = [];
             const lineas = output.trim().split('\n');
+            
             lineas.forEach(linea => {
-                // Parseo compatible con la salida de fping -c1
-                const match = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%.*min\/avg\/max = ([\d\.]+)\/([\d\.]+)\/([\d\.]+)/);
-                if (match) {
-                    const ip = match[1];
-                    const enviados = parseInt(match[2]);
-                    const recibidos = parseInt(match[3]);
-                    const perdida = parseInt(match[4]);
-                    const avg = parseFloat(match[6]);
+                // Parseo para Ubuntu - formato: "192.168.1.1 : [0], 84 bytes, 1.23 ms (1.23 avg, 0% loss)"
+                const matchVivo = linea.match(/^([\d\.]+)\s+:\s+\[(\d+)\],.*?([\d\.]+)\s+ms\s+\(([\d\.]+)\s+avg/);
+                if (matchVivo) {
+                    const ip = matchVivo[1];
+                    const avg = parseFloat(matchVivo[4]);
                     resultados.push({
                         ip,
-                        alive: recibidos > 0,
+                        alive: true,
                         latency: avg
                     });
                 } else {
-                    // Si la IP no responde, también puede haber una línea tipo: "192.168.1.123 : xmt/rcv/%loss = 1/0/100%"
-                    const noRespMatch = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%/);
-                    if (noRespMatch) {
-                        const ip = noRespMatch[1];
+                    // Para IPs que no responden - formato: "192.168.1.123 : xmt/rcv/%loss = 1/0/100%"
+                    const matchMuerto = linea.match(/^([\d\.]+)\s+:\s+.*?xmt\/rcv\/%loss\s+=\s+\d+\/\d+\/(\d+)%/);
+                    if (matchMuerto) {
+                        const ip = matchMuerto[1];
+                        const loss = parseInt(matchMuerto[2]);
                         resultados.push({
                             ip,
-                            alive: false,
+                            alive: loss < 100,
                             latency: 0
                         });
+                    } else {
+                        // Formato alternativo para IPs muertas: "192.168.1.123 is unreachable"
+                        const matchUnreachable = linea.match(/^([\d\.]+)\s+is\s+unreachable/);
+                        if (matchUnreachable) {
+                            const ip = matchUnreachable[1];
+                            resultados.push({
+                                ip,
+                                alive: false,
+                                latency: 0
+                            });
+                        }
                     }
                 }
             });
+            
             resolve(resultados);
         });
     });
@@ -60,7 +71,7 @@ async function guardarPingEnBD(ip, latency, alive) {
         conn = await pool.getConnection();
         const [ipIdRow] = await conn.query("SELECT id FROM ips_server WHERE ip = ?", [ip]);
         if (!ipIdRow || ipIdRow.length === 0) {
-            console.error(`No se encontró el id de la IP ${ip}`);
+        console.error(`[SERVER] No se encontró el id de la IP ${ip}`);
             return;
         }
         const ipId = ipIdRow[0].id;
@@ -69,7 +80,7 @@ async function guardarPingEnBD(ip, latency, alive) {
             [ipId, latency, alive ? 1 : 0]
         );
     } catch (err) {
-        console.error(`Error al guardar ping de ${ip}:`, err.message);
+        console.error(`[SERVER] Error al guardar ping de ${ip}:`, err.message);
     } finally {
         if (conn) conn.release();
     }
@@ -77,7 +88,7 @@ async function guardarPingEnBD(ip, latency, alive) {
 
 // Función principal de monitoreo continuo
 async function iniciarPings_serverContinuos() {
-    console.log('Servicio de monitoreo_DVR iniciado.');
+    console.log('Servicio de monitoreo_Server iniciado.');
     
     // Iniciamos el intervalo de ping
     setInterval(async () => {
@@ -86,13 +97,13 @@ async function iniciarPings_serverContinuos() {
             const ips = await obtenerIPs();
             
             if (ips.length > 0) {
-                const resultados = await hacerPingWSL(ips);
+                const resultados = await hacerPingUbuntu(ips); // Cambiado de hacerPingWSL a hacerPingUbuntu
                 await Promise.all(resultados.map(r =>
                     guardarPingEnBD(r.ip, r.latency, r.alive)
                 ));
             }
         } catch (err) {
-            console.error("Error durante el ciclo de ping:", err.message);
+            console.error("[SERVER] Error durante el ciclo de ping:", err.message);
         }
     }, 1000);
 }

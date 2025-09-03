@@ -12,7 +12,7 @@ export default function DvrCard({ result }) {
 
   const statusText = status === 'online' ? 'Online' : status === 'warning' ? 'Lento' : 'Offline'
   const statusColor = status === 'online' ? '#22C55E' : status === 'warning' ? '#EAB308' : '#EF4444'
-  const href = `https://${result.ip}:80`
+  const href = `https://${result.ip}`
 
   return (
     <div className={`min-w-[140px] sm:min-w-[160px] rounded-xl p-4 shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 border-2 hover:delay-300 ${statusClass}`}>
