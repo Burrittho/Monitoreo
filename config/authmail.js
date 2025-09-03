@@ -16,8 +16,8 @@ const transporter = nodemailer.createTransport({
     connectionTimeout: 30000,    // Aumentado a 30 segundos
     greetingTimeout: 15000,     // Aumentado a 15 segundos
     socketTimeout: 30000,       // Aumentado a 30 segundos
-    //debug: true,
-    //logger: true,
+    //debug: true,               // Habilitar depuración
+    //logger: true,              // Habilitar registro
     pool: true,                 // Habilitar pool de conexiones
     maxConnections: 3,          // Máximo de conexiones simultáneas
     maxMessages: Infinity,
