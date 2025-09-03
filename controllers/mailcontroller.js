@@ -82,6 +82,44 @@ function shouldSendNotification(currentState, prevState, prevNotifySent, notific
 }
 
 // --- HELPERS PARA ENCONTRAR MOMENTOS EXACTOS DE TRANSICIÓN ---
+// Obtener el último ping exitoso antes de una fecha específica
+async function getLastSuccessfulPing(ipId, beforeTime) {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
+       CASE WHEN tiempo_respuesta IS NOT NULL THEN tiempo_respuesta ELSE 0 END as tiempo_respuesta
+       FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
+      [ipId, new Date(beforeTime)]
+    );
+    if (rows.length > 0) {
+      return rows[0];
+    }
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, tiempo_respuesta: 0 };
+  } finally {
+    conn.release();
+  }
+}
+
+// Obtener el último ping fallido antes de una fecha específica  
+async function getLastFailedPing(ipId, beforeTime) {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
+       CASE WHEN tiempo_respuesta IS NOT NULL THEN tiempo_respuesta ELSE 'timeout' END as tiempo_respuesta
+       FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
+      [ipId, new Date(beforeTime)]
+    );
+    if (rows.length > 0) {
+      return rows[0];
+    }
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, tiempo_respuesta: 'timeout' };
+  } finally {
+    conn.release();
+  }
+}
+
 // Buscar LOG exacto de UNSTABLE (primer ping fallido)
 async function getExactUnstableTime(ipId, currentFecha) {
   const conn = await pool.getConnection();
@@ -374,6 +412,9 @@ async function checkHost({ id: ipId, ip, name }) {
         // Si hay N fallos consecutivos en la ventana, cambiar a DOWN
         if (!isAlive) {
           const { timestamp: exactDownTime, fecha: exactDownDate } = await getExactDownTime(ipId, now);
+          // Obtener el último ping exitoso desde la BD
+          const lastUpPing = await getLastSuccessfulPing(ipId, exactDownTime);
+          
           newState = {
             ...newState,
             state: STATE_DOWN,
@@ -389,9 +430,32 @@ async function checkHost({ id: ipId, ip, name }) {
             upSince: prev.upSince,
             downSince: exactDownTime
           });
+          
+          // Correo profesional con información completa
           await sendMailWithRetry(
-            `Host DOWN. Último UP: ${formatDate(prev.upSince)}`,
-            `El host ${name} (${ip}) ha caído. Último ping exitoso: ${formatDate(prev.upSince)}`
+            `ALERTA: ${name} - Sistema Caído`,
+            `NOTIFICACIÓN DE CAÍDA DEL SISTEMA
+            
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INFORMACIÓN DEL HOST:
+   • Nombre: ${name}
+   • Dirección IP: ${ip}
+   • Estado: CAÍDO
+
+DETALLES DEL INCIDENTE:
+   • Último ping exitoso: ${formatDate(lastUpPing.fecha)}
+   • Tiempo de respuesta: ${lastUpPing.tiempo_respuesta}ms
+   • Primer fallo detectado: ${formatDate(exactDownDate)}
+   • Confirmación de caída: ${formatDate(exactDownDate)}
+
+TIEMPO TRANSCURRIDO:
+   • Duración hasta confirmación: ${formatDuration(exactDownTime - lastUpPing.timestamp)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este es un mensaje automático del Sistema de Monitoreo N+1.
+Fecha de generación: ${formatDate(new Date())}`
           );
         }
         break;
@@ -399,6 +463,9 @@ async function checkHost({ id: ipId, ip, name }) {
         // Si hay N éxitos consecutivos en la ventana, cambiar a UP
         if (isAlive) {
           const { timestamp: exactUpTime, fecha: exactUpDate } = await getExactUpTime(ipId, prev.downSince);
+          // Obtener el último ping fallido desde la BD
+          const lastDownPing = await getLastFailedPing(ipId, exactUpTime);
+          
           newState = {
             ...newState,
             state: STATE_UP,
@@ -414,9 +481,33 @@ async function checkHost({ id: ipId, ip, name }) {
             downSince: prev.downSince,
             upSince: exactUpTime
           });
+          
+          // Correo profesional de recuperación
           await sendMailWithRetry(
-            `Host UP. Último DOWN: ${formatDate(prev.downSince)}`,
-            `El host ${name} (${ip}) está arriba. Último ping fallido: ${formatDate(prev.downSince)}`
+            `RECUPERADO: ${name} - Sistema Restablecido`,
+            `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA
+            
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INFORMACIÓN DEL HOST:
+   • Nombre: ${name}
+   • Dirección IP: ${ip}
+   • Estado: OPERATIVO
+
+DETALLES DE LA RECUPERACIÓN:
+   • Último ping fallido: ${formatDate(lastDownPing.fecha)}
+   • Primer ping exitoso: ${formatDate(exactUpDate)}
+   • Tiempo de respuesta: ${lastDownPing.tiempo_respuesta || 'timeout'}
+   • Confirmación de recuperación: ${formatDate(exactUpDate)}
+
+RESUMEN DEL INCIDENTE:
+   • Tiempo total de caída: ${formatDuration(exactUpTime - prev.downSince)}
+   • Estado actual: COMPLETAMENTE OPERATIVO
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este es un mensaje automático del Sistema de Monitoreo N+1.
+Fecha de generación: ${formatDate(new Date())}`
           );
         }
         break;
