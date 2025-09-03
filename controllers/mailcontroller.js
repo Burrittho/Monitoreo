@@ -10,6 +10,7 @@ const CHECK_INTERVAL = 30000; // 30 segundos
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';
 const STATE_UNSTABLE = 'UNSTABLE';
+const STATE_RECOVERING = 'RECOVERING';
 
 // Cache de configuración y estados
 let config = {};
