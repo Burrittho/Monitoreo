@@ -109,5 +109,5 @@ iniciarPings_serverContinuos();
 
 // Iniciar el servidor en el puerto especificado
 app.listen(port, () => {
-    console.log(`Server is running at http://localhost:${port}`);
+    console.log(`Servidor iniciado en Puerto:${port}`);
 });
