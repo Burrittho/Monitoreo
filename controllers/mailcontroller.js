@@ -88,14 +88,14 @@ async function getLastSuccessfulPing(ipId, beforeTime) {
   try {
     const [rows] = await conn.query(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
-       CASE WHEN tiempo_respuesta IS NOT NULL THEN tiempo_respuesta ELSE 0 END as tiempo_respuesta
+       CASE WHEN latency IS NOT NULL THEN latency ELSE 0 END as latency
        FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
       [ipId, new Date(beforeTime)]
     );
     if (rows.length > 0) {
       return rows[0];
     }
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, tiempo_respuesta: 0 };
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 0 };
   } finally {
     conn.release();
   }
@@ -107,14 +107,14 @@ async function getLastFailedPing(ipId, beforeTime) {
   try {
     const [rows] = await conn.query(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
-       CASE WHEN tiempo_respuesta IS NOT NULL THEN tiempo_respuesta ELSE 'timeout' END as tiempo_respuesta
+       CASE WHEN latency IS NOT NULL THEN latency ELSE 'timeout' END as latency
        FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
       [ipId, new Date(beforeTime)]
     );
     if (rows.length > 0) {
       return rows[0];
     }
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, tiempo_respuesta: 'timeout' };
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 'timeout' };
   } finally {
     conn.release();
   }
@@ -445,7 +445,7 @@ INFORMACIÓN DEL HOST:
 
 DETALLES DEL INCIDENTE:
    • Último ping exitoso: ${formatDate(lastUpPing.fecha)}
-   • Tiempo de respuesta: ${lastUpPing.tiempo_respuesta}ms
+   • Tiempo de respuesta: ${lastUpPing.latency}ms
    • Primer fallo detectado: ${formatDate(exactDownDate)}
    • Confirmación de caída: ${formatDate(exactDownDate)}
 
@@ -497,7 +497,7 @@ INFORMACIÓN DEL HOST:
 DETALLES DE LA RECUPERACIÓN:
    • Último ping fallido: ${formatDate(lastDownPing.fecha)}
    • Primer ping exitoso: ${formatDate(exactUpDate)}
-   • Tiempo de respuesta: ${lastDownPing.tiempo_respuesta || 'timeout'}
+   • Tiempo de respuesta: ${lastDownPing.latency || 'timeout'}
    • Confirmación de recuperación: ${formatDate(exactUpDate)}
 
 RESUMEN DEL INCIDENTE:
