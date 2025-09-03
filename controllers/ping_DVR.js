@@ -15,7 +15,7 @@ async function hacerPingUbuntu(ips) {
         if (!ips.length) return resolve([]);
 
         // Comando para Ubuntu nativo (SIN wsl)
-        const comando = `wsl fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
+        const comando = `fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
 
         exec(comando, (error, stdout, stderr) => {
             const output = stdout || stderr;

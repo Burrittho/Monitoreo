@@ -15,7 +15,7 @@ async function hacerPingWSL(ips) {
         if (!ips.length) return resolve([]);
 
         // Preparamos el comando WSL con fping (¡la magia está aquí!)
-        const comando = `wsl fping -c1 -t1500 ${ips.join(' ')}`;
+        const comando = `fping -c1 -t1500 ${ips.join(' ')}`;
 
         exec(comando, (error, stdout, stderr) => {
             const output = stderr || stdout;
