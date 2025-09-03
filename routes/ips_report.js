@@ -447,7 +447,7 @@ router.get('/ping-results-dvr', async (req, res, next) => {
     }
 });
 
-// Nuevo Endpoint para obtener los resultados del ping de servidores (Monitor)
+// Nuevo Endpoint para obtener los resultados del ping de servidores (Monitor-)
 router.get('/ping-results-server', async (req, res, next) => {
     try {
         const conn = await pool.getConnection();
