@@ -342,6 +342,59 @@ async function startWorker(poolConnection) {
 }
 
 // --- MÁQUINA DE ESTADOS CON TODAS LAS TRANSICIONES ---
+// Evalúa la ventana de N+1 minutos y retorna el nuevo estado y los timestamps relevantes
+async function evaluateWindowState(ipId, now) {
+  const windowMinutes = SEQUENCE_WINDOW_MINUTES + 1;
+  const windowStart = new Date(now - windowMinutes * 60 * 1000);
+  const conn = await pool.getConnection();
+  try {
+    const [logs] = await conn.query(
+      'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? AND fecha >= ? ORDER BY fecha ASC',
+      [ipId, windowStart]
+    );
+    // Agrupa por minuto
+    const minutesMap = new Map();
+    logs.forEach(log => {
+      const minuteKey = Math.floor(log.timestamp / 60000);
+      if (!minutesMap.has(minuteKey)) minutesMap.set(minuteKey, []);
+      minutesMap.get(minuteKey).push(log.success);
+    });
+    // Para cada minuto, si todos los pings son éxito, es minuto OK; si todos son fallo, es minuto FAIL; si mezcla, es MIX
+    const minuteStates = [];
+    for (const [minute, arr] of minutesMap.entries()) {
+      if (arr.every(s => s === 1)) minuteStates.push({ minute, state: 'OK' });
+      else if (arr.every(s => s === 0)) minuteStates.push({ minute, state: 'FAIL' });
+      else minuteStates.push({ minute, state: 'MIX' });
+    }
+    // Ordena por minuto ascendente
+    minuteStates.sort((a, b) => a.minute - b.minute);
+    // Busca bloques de N minutos consecutivos de OK o FAIL
+    let blockOK = null, blockFAIL = null;
+    for (let i = 0; i <= minuteStates.length - CONSECUTIVE_SUCCESSES_REQUIRED; i++) {
+      const okBlock = minuteStates.slice(i, i + CONSECUTIVE_SUCCESSES_REQUIRED);
+      if (okBlock.every(m => m.state === 'OK')) blockOK = okBlock;
+      const failBlock = minuteStates.slice(i, i + CONSECUTIVE_FAILURES_REQUIRED);
+      if (failBlock.every(m => m.state === 'FAIL')) blockFAIL = failBlock;
+      if (blockOK || blockFAIL) break;
+    }
+    if (blockOK) {
+      // Estado UP, busca el último ping fallido antes del bloque
+      const firstBlockMinute = blockOK[0].minute * 60000;
+      const lastFailed = await getLastFailedPing(ipId, firstBlockMinute);
+      return { state: STATE_UP, lastFailed };
+    } else if (blockFAIL) {
+      // Estado DOWN, busca el último ping exitoso antes del bloque
+      const firstBlockMinute = blockFAIL[0].minute * 60000;
+      const lastSuccess = await getLastSuccessfulPing(ipId, firstBlockMinute);
+      return { state: STATE_DOWN, lastSuccess };
+    } else {
+      // Estado UNSTABLE
+      return { state: STATE_UNSTABLE };
+    }
+  } finally {
+    conn.release();
+  }
+}
 async function checkHost({ id: ipId, ip, name }) {
   let conn;
   try {
@@ -369,208 +422,103 @@ async function checkHost({ id: ipId, ip, name }) {
             downSince: row.down_since ? new Date(row.down_since).getTime() : null,
             upSince: row.up_since ? new Date(row.up_since).getTime() : null,
             notifySent: row.notify_sent,
-            notifyTime: row.notify_sent ? Date.now() : null,
-            lastCheckTime: now - CHECK_INTERVAL,
-            lastStateChange: Date.now()
+            notifyTime: row.notify_sent ? Date.now() : null, // Cuando se envió la última notificación
+            lastCheckTime: Date.now(),
+            lastStateChange: Date.now() // Cuándo fue el último cambio de estado
           };
         } else {
-          // Si no hay estado en la BD, iniciar como UP
+          // Si no hay estado en la BD, inicializar como UP
           hostsStatus[ipId] = {
             state: STATE_UP,
             unstableSince: null,
             downSince: null,
             upSince: now,
-            notifySent: null,
+            notifySent: false,
             notifyTime: null,
-            lastCheckTime: now - CHECK_INTERVAL,
+            lastCheckTime: Date.now(),
             lastStateChange: Date.now()
           };
+          await connection.query(
+            `INSERT INTO host_state (ip_id, state, up_since, last_check_time)
+             VALUES (?, ?, NOW(), NOW())`,
+            [ipId, STATE_UP]
+          );
         }
+      } catch (error) {
+        console.error('Error al verificar estado en BD:', error);
       } finally {
         connection.release();
       }
     }
-    
-    const prev = hostsStatus[ipId];
 
-    const isAlive = lastLog.success.readUInt8 ? lastLog.success.readUInt8(0) === 1 : lastLog.success === 1;
+    const evalResult = await evaluateWindowState(ipId, now);
+    let newState = { ...hostsStatus[ipId] };
     let changed = false;
-    let newState = { ...prev, lastCheckTime: now };
 
-  // Prevenir cambios de estado demasiado frecuentes (debouncing)
-  const timeSinceLastStateChange = now - (prev.lastStateChange || 0);
-  const minStateChangeInterval = config.intervalo_cambio_estado_segundos || 10 * 1000;
-    
-    // Verificar si este ping es más reciente que el último cambio de estado
-    if (lastLog.timestamp <= prev.lastCheckTime) {
-      console.log(`⏭️ Ignorando ping más antiguo para ${name} (${ip}): ${formatDate(lastLog.fecha)}`);
-      return;
-    }
-
-    switch (prev.state) {
+    switch (evalResult.state) {
       case STATE_UP:
-        // Si hay N fallos consecutivos en la ventana, cambiar a DOWN
-        if (!isAlive) {
-          const { timestamp: exactDownTime, fecha: exactDownDate } = await getExactDownTime(ipId, now);
-          // Obtener el último ping exitoso desde la BD
-          const lastUpPing = await getLastSuccessfulPing(ipId, exactDownTime);
-          
+        if (newState.state !== STATE_UP) {
+          // Transición a UP
           newState = {
             ...newState,
-            state: STATE_DOWN,
-            downSince: exactDownTime,
+            state: STATE_UP,
             unstableSince: null,
-            upSince: prev.upSince,
-            notifySent: 'DOWN',
-            notifyTime: now,
-            lastStateChange: now
+            downSince: null,
+            upSince: now,
+            notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, STATE_UP, STATE_DOWN, {
-            upSince: prev.upSince,
-            downSince: exactDownTime
-          });
-          
-          // Correo profesional con información completa
-          await sendMailWithRetry(
-            `ALERTA: ${name} - Sistema Caído`,
-            `NOTIFICACIÓN DE CAÍDA DEL SISTEMA
-            
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-INFORMACIÓN DEL HOST:
-   • Nombre: ${name}
-   • Dirección IP: ${ip}
-   • Estado: CAÍDO
-
-DETALLES DEL INCIDENTE:
-   • Último ping exitoso: ${formatDate(lastUpPing.fecha)}
-   • Tiempo de respuesta: ${lastUpPing.latency}ms
-   • Primer fallo detectado: ${formatDate(exactDownDate)}
-   • Confirmación de caída: ${formatDate(exactDownDate)}
-
-TIEMPO TRANSCURRIDO:
-   • Duración hasta confirmación: ${formatDuration(exactDownTime - lastUpPing.timestamp)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Este es un mensaje automático del Sistema de Monitoreo N+1.
-Fecha de generación: ${formatDate(new Date())}`
-          );
+          await logStateTransition(ipId, STATE_DOWN, STATE_UP, evalResult);
+          // Enviar correo de recuperación si es necesario
+          if (newState.notifySent === false && config.enviar_correos_unstable) {
+            await sendMailWithRetry(
+              `RECUPERADO: ${name} - Sistema Restablecido`,
+              `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA\n\n` +
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+              `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: OPERATIVO\n\n` +
+              `DETALLES DE LA RECUPERACIÓN:\n   • Último ping fallido: ${formatDate(evalResult.lastFailed ? evalResult.lastFailed.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastFailed ? evalResult.lastFailed.latency : 'N/A'}ms\n   • Confirmación de recuperación: ${formatDate(new Date(now))}\n\n` +
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+              `Este es un mensaje automático del Sistema de Monitoreo N+1.\nFecha de generación: ${formatDate(new Date())}`
+            );
+          }
         }
         break;
       case STATE_DOWN:
-        // Si hay N éxitos consecutivos en la ventana, cambiar a UP
-        if (isAlive) {
-          const { timestamp: exactUpTime, fecha: exactUpDate } = await getExactUpTime(ipId, prev.downSince);
-          // Obtener el último ping fallido desde la BD
-          const lastDownPing = await getLastFailedPing(ipId, exactUpTime);
-          
-          newState = {
-            ...newState,
-            state: STATE_UP,
-            upSince: exactUpTime,
-            downSince: null,
-            unstableSince: null,
-            notifySent: 'UP',
-            notifyTime: now,
-            lastStateChange: now
-          };
-          changed = true;
-          await logStateTransition(ipId, STATE_DOWN, STATE_UP, {
-            downSince: prev.downSince,
-            upSince: exactUpTime
-          });
-          
-          // Correo profesional de recuperación
-          await sendMailWithRetry(
-            `RECUPERADO: ${name} - Sistema Restablecido`,
-            `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA
-            
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-INFORMACIÓN DEL HOST:
-   • Nombre: ${name}
-   • Dirección IP: ${ip}
-   • Estado: OPERATIVO
-
-DETALLES DE LA RECUPERACIÓN:
-   • Último ping fallido: ${formatDate(lastDownPing.fecha)}
-   • Primer ping exitoso: ${formatDate(exactUpDate)}
-   • Tiempo de respuesta: ${lastDownPing.latency || 'timeout'}
-   • Confirmación de recuperación: ${formatDate(exactUpDate)}
-
-RESUMEN DEL INCIDENTE:
-   • Tiempo total de caída: ${formatDuration(exactUpTime - prev.downSince)}
-   • Estado actual: COMPLETAMENTE OPERATIVO
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Este es un mensaje automático del Sistema de Monitoreo N+1.
-Fecha de generación: ${formatDate(new Date())}`
-          );
-        }
-        break;
-      case STATE_UNSTABLE:
-        // Si aparece bloque de N consecutivos, cambiar a UP o DOWN
-        if (isAlive) {
-          const { timestamp: exactUpTime } = await getExactUPTimeFromUnstable(ipId, prev.unstableSince);
-          newState = {
-            ...newState,
-            state: STATE_UP,
-            upSince: exactUpTime,
-            unstableSince: null,
-            downSince: null,
-            notifySent: null,
-            notifyTime: null,
-            lastStateChange: now
-          };
-          changed = true;
-          await logStateTransition(ipId, STATE_UNSTABLE, STATE_UP, {
-            unstableSince: prev.unstableSince,
-            upSince: exactUpTime
-          });
-        } else {
-          const { timestamp: exactDownTime } = await getExactDownTime(ipId, prev.unstableSince);
+        if (newState.state !== STATE_DOWN) {
+          // Transición a DOWN
           newState = {
             ...newState,
             state: STATE_DOWN,
-            downSince: exactDownTime,
             unstableSince: null,
-            upSince: prev.upSince,
-            notifySent: null,
-            notifyTime: null,
-            lastStateChange: now
+            downSince: now,
+            upSince: null,
+            notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, STATE_UNSTABLE, STATE_DOWN, {
-            unstableSince: prev.unstableSince,
-            downSince: exactDownTime
-          });
+          await logStateTransition(ipId, STATE_UP, STATE_DOWN, evalResult);
+          // Enviar correo de caída si es necesario
+          await sendMailWithRetry(
+            `ALERTA: ${name} - Sistema Caído`,
+            `NOTIFICACIÓN DE CAÍDA DEL SISTEMA\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: CAÍDO\n\n` +
+            `DETALLES DEL INCIDENTE:\n   • Último ping exitoso: ${formatDate(evalResult.lastSuccess ? evalResult.lastSuccess.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastSuccess ? evalResult.lastSuccess.latency : 'N/A'}ms\n   • Confirmación de caída: ${formatDate(new Date(now))}\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `Este es un mensaje automático del Sistema de Monitoreo N+1.\nFecha de generación: ${formatDate(new Date())}`
+          );
         }
         break;
       default:
-        // Si no hay bloque de N consecutivos, marcar como UNSTABLE
-        newState = {
-          ...newState,
-          state: STATE_UNSTABLE,
-          unstableSince: now,
-          lastStateChange: now
-        };
-        changed = true;
-        await logStateTransition(ipId, prev.state, STATE_UNSTABLE, {
-          unstableSince: now
-        });
+        // No acción
         break;
     }
-
     if (changed) {
       hostsStatus[ipId] = newState;
       console.log(`Estado actual de ${name} (${ip}):`);
       console.log(`  - Estado: ${newState.state}`);
       console.log(`  - Inestabilidad: ${newState.unstableSince ? formatDate(new Date(newState.unstableSince)) : 'NULL'}`);
       console.log(`  - Caída: ${newState.downSince ? formatDate(new Date(newState.downSince)) : 'NULL'}`);
-      console.log(`  - Recuperación: ${newState.upSince ? formatDate(new Date(newState.upSince)) : 'NULL'}`);
+      console.log(`  - Recuperación: ${newState.upSince ? formatDate(newState.upSince ? new Date(newState.upSince) : null) : 'NULL'}`);
       console.log(`  - Notificación: ${newState.notifySent || 'NULL'}`);
       await persistHostState(
         ipId,
@@ -581,12 +529,9 @@ Fecha de generación: ${formatDate(new Date())}`
         newState.notifySent
       );
     }
-  } catch (err) {
+  } catch (error) {
+    console.error(`Error procesando el host ${name} (${ip}):`, error);
+  } finally {
     if (conn) conn.release();
-    console.error('Error en checkHost:', err);
   }
 }
-
-module.exports = {
-  startWorker
-};
