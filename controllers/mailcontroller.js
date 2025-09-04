@@ -15,7 +15,6 @@ let CONSECUTIVE_FAILURES_REQUIRED = 3;
 let SEQUENCE_WINDOW_MINUTES = 10;
 let THRESHOLD_DOWN = 60000; // 60 segundos
 
-// Estados del sistema N+1 (solo 3 estados);;;
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';
 const STATE_UNSTABLE = 'UNSTABLE';
@@ -535,3 +534,6 @@ async function checkHost({ id: ipId, ip, name }) {
     if (conn) conn.release();
   }
 }
+
+// Exportar la función principal para que pueda ser utilizada en server.js
+module.exports = { startWorker };
