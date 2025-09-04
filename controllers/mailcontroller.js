@@ -346,19 +346,17 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, STATE_DOWN, STATE_UP, evalResult);
-          // Enviar correo de recuperación si es necesario
-          if (newState.notifySent === false && config.enviar_correos_unstable) {
-            await sendMailWithRetry(
-              `RECUPERADO: ${name} - Sistema Restablecido`,
-              `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA\n\n` +
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-              `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: OPERATIVO\n\n` +
-              `DETALLES DE LA RECUPERACIÓN:\n   • Último ping fallido: ${formatDate(evalResult.lastFailed ? evalResult.lastFailed.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastFailed ? evalResult.lastFailed.latency : 'N/A'}ms\n   • Confirmación de recuperación: ${formatDate(new Date(now))}\n\n` +
-              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-              `Este es un mensaje automático del Sistema de Monitoreo N+1.\nFecha de generación: ${formatDate(new Date())}`
-            );
-          }
+          await logStateTransition(ipId, newState.state, STATE_UP, evalResult);
+          // Enviar correo de recuperación siempre (no depende de enviar_correos_unstable)
+          await sendMailWithRetry(
+            `RECUPERADO: ${name} - Sistema Restablecido`,
+            `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: OPERATIVO\n\n` +
+            `DETALLES DE LA RECUPERACIÓN:\n   • Último ping fallido: ${formatDate(evalResult.lastFailed ? evalResult.lastFailed.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastFailed ? evalResult.lastFailed.latency : 'N/A'}ms\n   • Confirmación de recuperación: ${formatDate(new Date(now))}\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `Este es un mensaje automático del Sistema de Monitoreo.\nFecha de generación: ${formatDate(new Date())}`
+          );
         }
         break;
       case STATE_DOWN:
@@ -373,8 +371,8 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, STATE_UP, STATE_DOWN, evalResult);
-          // Enviar correo de caída si es necesario
+          await logStateTransition(ipId, newState.state, STATE_DOWN, evalResult);
+          // Enviar correo de caída siempre
           await sendMailWithRetry(
             `ALERTA: ${name} - Sistema Caído`,
             `NOTIFICACIÓN DE CAÍDA DEL SISTEMA\n\n` +
@@ -382,7 +380,7 @@ async function checkHost({ id: ipId, ip, name }) {
             `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: CAÍDO\n\n` +
             `DETALLES DEL INCIDENTE:\n   • Último ping exitoso: ${formatDate(evalResult.lastSuccess ? evalResult.lastSuccess.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastSuccess ? evalResult.lastSuccess.latency : 'N/A'}ms\n   • Confirmación de caída: ${formatDate(new Date(now))}\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `Este es un mensaje automático del Sistema de Monitoreo N+1.\nFecha de generación: ${formatDate(new Date())}`
+            `Este es un mensaje automático del Sistema de Monitoreo.\nFecha de generación: ${formatDate(new Date())}`
           );
         }
         break;
