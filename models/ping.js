@@ -3,10 +3,17 @@ const pool = require('../config/db'); // Tu pool de conexiones MySQL
 
 // Función para obtener la lista de IPs desde la base de datos
 async function obtenerIPs() {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT ip FROM ips');
-    conn.release();
-    return rows.map(row => row.ip);
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const [rows] = await conn.query('SELECT ip FROM ips');
+        return rows.map(row => row.ip);
+    } catch (err) {
+        console.error("Error al obtener IPs:", err.message);
+        return [];
+    } finally {
+        if (conn) conn.release();
+    }
 }
 
 // Función para hacer ping a todas las IPs usando fping en WSL
@@ -71,7 +78,13 @@ async function guardarPingEnBD(ip, latency, alive) {
     } catch (err) {
         console.error(`Error al guardar ping de ${ip}:`, err.message);
     } finally {
-        if (conn) conn.release();
+        if (conn) {
+            try {
+                conn.release();
+            } catch (releaseErr) {
+                console.error(`Error al liberar conexión para ${ip}:`, releaseErr.message);
+            }
+        }
     }
 }
 

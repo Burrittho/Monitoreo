@@ -11,6 +11,9 @@ package-lock.json
 .env.production
 .env.test
 
+#Documentos
+Docs/
+
 # Build outputs
 dist/
 build/

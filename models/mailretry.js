@@ -2,10 +2,10 @@ const nodemailer = require('nodemailer');
 const { sendMail } = require('../utils/mailer');
 
 // Función para enviar correos con reintentos
-async function sendMailWithRetry(subject, text, retries = 3, delay = 2000) {
+async function sendMailWithRetry(subject, content, isHtml = false, retries = 3, delay = 2000) {
     for (let i = 0; i < retries; i++) {
         try {
-            await sendMail(subject, text);
+            await sendMail(subject, content, isHtml);
             console.log('Correo enviado:', subject);
             return;
         } catch (error) {

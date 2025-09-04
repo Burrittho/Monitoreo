@@ -3,10 +3,17 @@ const pool = require('../config/db'); // Tu pool de conexiones MySQL
 
 // Función para obtener la lista de IPs desde la base de datos
 async function obtenerIPs() {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT ip FROM ips_server');
-    conn.release();
-    return rows.map(row => row.ip);
+    let conn;
+    try {
+        conn = await pool.getConnection();
+        const [rows] = await conn.query('SELECT ip FROM ips_server');
+        return rows.map(row => row.ip);
+    } catch (err) {
+        console.error("[SERVER] Error al obtener IPs:", err.message);
+        return [];
+    } finally {
+        if (conn) conn.release();
+    }
 }
 
 // Función para hacer ping a todas las IPs usando fping nativo de Ubuntu
@@ -71,7 +78,7 @@ async function guardarPingEnBD(ip, latency, alive) {
         conn = await pool.getConnection();
         const [ipIdRow] = await conn.query("SELECT id FROM ips_server WHERE ip = ?", [ip]);
         if (!ipIdRow || ipIdRow.length === 0) {
-        console.error(`[SERVER] No se encontró el id de la IP ${ip}`);
+            console.error(`[SERVER] No se encontró el id de la IP ${ip}`);
             return;
         }
         const ipId = ipIdRow[0].id;
@@ -82,7 +89,13 @@ async function guardarPingEnBD(ip, latency, alive) {
     } catch (err) {
         console.error(`[SERVER] Error al guardar ping de ${ip}:`, err.message);
     } finally {
-        if (conn) conn.release();
+        if (conn) {
+            try {
+                conn.release();
+            } catch (releaseErr) {
+                console.error(`[SERVER] Error al liberar conexión para ${ip}:`, releaseErr.message);
+            }
+        }
     }
 }
 

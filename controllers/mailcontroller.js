@@ -1,4 +1,6 @@
 const { sendMailWithRetry } = require('../models/mailretry');
+const fs = require('fs').promises;
+const path = require('path');
 
 // Variable para el pool de conexiones
 let pool = null;
@@ -74,6 +76,480 @@ function formatDate(dateValue) {
   } catch (error) {
     return 'Fecha inválida';
   }
+}
+
+// --- FUNCIONES PARA CONSULTAR DATOS DE LAS TABLAS ---
+
+// Consultar información de sucursal
+async function getSucursalInfo(ipId) {
+  const conn = await pool.getConnection();
+  try {
+    // Primero obtenemos la información básica del host
+    const [[ipInfo]] = await conn.query(
+      'SELECT ip, name FROM ips WHERE id = ?',
+      [ipId]
+    );
+    
+    // Obtenemos información de la sucursal usando la relación correcta
+    // sucursal_id en proveedores_internet es FK de id en ips
+    const [[proveedorInfo]] = await conn.query(
+      `SELECT p.Direccion, p.Colonia, p.Ciudad, p.Estado, p.maps 
+       FROM proveedores_internet p 
+       WHERE p.sucursal_id = ?`,
+      [ipId]
+    );
+    
+    let direccionCompleta = 'No disponible';
+    let urlMaps = '#';
+    
+    if (proveedorInfo) {
+      const direccionPartes = [
+        proveedorInfo.Direccion,
+        proveedorInfo.Colonia,
+        proveedorInfo.Ciudad,
+        proveedorInfo.Estado
+      ].filter(parte => parte && parte.trim() !== '');
+      
+      direccionCompleta = direccionPartes.length > 0 ? direccionPartes.join(', ') : 'No disponible';
+      urlMaps = proveedorInfo.maps || '#';
+    }
+    
+    return {
+      nombre: ipInfo ? ipInfo.name : 'Host desconocido',
+      ip: ipInfo ? ipInfo.ip : 'IP desconocida',
+      direccion: direccionCompleta,
+      urlMaps: urlMaps
+    };
+  } finally {
+    conn.release();
+  }
+}
+
+// Consultar información de licencia/consola
+async function getConsolaInfo(ipId) {
+  const conn = await pool.getConnection();
+  try {
+    const [[licenciaInfo]] = await conn.query(
+      `SELECT ip_id, mac, url, expiracion 
+       FROM licencia 
+       WHERE ip_id = ? 
+       ORDER BY fecha DESC LIMIT 1`,
+      [ipId]
+    );
+    
+    if (licenciaInfo) {
+      const [[ipInfo]] = await conn.query('SELECT ip FROM ips WHERE id = ?', [ipId]);
+      return {
+        ip: ipInfo ? ipInfo.ip : 'IP desconocida',
+        mac: licenciaInfo.mac || 'No disponible',
+        url: licenciaInfo.url || 'No disponible'
+      };
+    }
+    
+    return {
+      ip: 'No disponible',
+      mac: 'No disponible', 
+      url: 'No disponible'
+    };
+  } finally {
+    conn.release();
+  }
+}
+
+// Consultar información de internet y check_internet
+async function getInternetInfo(ipId) {
+  const conn = await pool.getConnection();
+  try {
+    // Información de proveedores usando la relación correcta
+    const [[proveedorInfo]] = await conn.query(
+      `SELECT p.proveedor_primario, p.cuenta_primario, p.proveedor_secundario, p.cuenta_secundario
+       FROM proveedores_internet p 
+       WHERE p.sucursal_id = ?`,
+      [ipId]
+    );
+    
+    // Información de check_internet (últimos datos)
+    const [[checkInfo]] = await conn.query(
+      `SELECT proveedor1, interfaz1, tipo1, ip1, trazado1, 
+              proveedor2, interfaz2, tipo2, ip2, trazado2
+       FROM check_internet 
+       WHERE ip_id = ? 
+       ORDER BY fecha DESC LIMIT 1`,
+      [ipId]
+    );
+    
+    const result = {
+      proveedores: {
+        primario: proveedorInfo ? proveedorInfo.proveedor_primario : 'No disponible',
+        cuentaPrimario: proveedorInfo ? proveedorInfo.cuenta_primario : 'No disponible',
+        secundario: proveedorInfo ? proveedorInfo.proveedor_secundario : 'No disponible',
+        cuentaSecundario: proveedorInfo ? proveedorInfo.cuenta_secundario : 'No disponible'
+      },
+      conexiones: []
+    };
+    
+    if (checkInfo) {
+      if (checkInfo.proveedor1) {
+        result.conexiones.push({
+          proveedor: checkInfo.proveedor1,
+          puerto: checkInfo.interfaz1 || 'N/A',
+          configuracion: checkInfo.tipo1 || 'N/A',
+          ip: checkInfo.ip1 || 'N/A',
+          estado: checkInfo.trazado1 || 'Desconocido'
+        });
+      }
+      
+      if (checkInfo.proveedor2) {
+        result.conexiones.push({
+          proveedor: checkInfo.proveedor2,
+          puerto: checkInfo.interfaz2 || 'N/A',
+          configuracion: checkInfo.tipo2 || 'N/A',
+          ip: checkInfo.ip2 || 'N/A',
+          estado: checkInfo.trazado2 || 'Desconocido'
+        });
+      }
+    }
+    
+    return result;
+  } finally {
+    conn.release();
+  }
+}
+
+// Consultar últimos pings
+async function getUltimosPings(ipId, limit = 10, afterTimestamp = null) {
+  const conn = await pool.getConnection();
+  try {
+    let query = `
+      SELECT success, latency, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp
+      FROM ping_logs 
+      WHERE ip_id = ?`;
+    let params = [ipId];
+    
+    if (afterTimestamp) {
+      query += ' AND UNIX_TIMESTAMP(fecha) * 1000 > ?';
+      params.push(afterTimestamp);
+    }
+    
+    query += ' ORDER BY fecha DESC LIMIT ?';
+    params.push(limit);
+    
+    const [pings] = await conn.query(query, params);
+    
+    return pings.map(ping => ({
+      fecha: formatDate(ping.fecha),
+      estado: ping.success ? 'Exitoso' : 'Fallido',
+      latencia: ping.success ? `${ping.latency}ms` : 'Timeout',
+      timestamp: ping.timestamp
+    }));
+  } finally {
+    conn.release();
+  }
+}
+
+// --- FUNCIONES PARA GENERAR HTML ---
+
+// Cargar plantilla HTML
+async function loadEmailTemplate() {
+  try {
+    const templatePath = path.join(__dirname, '..', 'templates', 'email-template.html');
+    const template = await fs.readFile(templatePath, 'utf8');
+    return template;
+  } catch (error) {
+    console.error('Error al cargar plantilla HTML:', error);
+    // Plantilla de respaldo simple
+    return `
+      <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h1>{{TITULO_HEADER}}</h1>
+          <div>{{CONTENIDO_TABLAS}}</div>
+          <p><small>{{FECHA_GENERACION}}</small></p>
+        </body>
+      </html>
+    `;
+  }
+}
+
+// Generar tabla de sucursal
+function generateSucursalTable(sucursalInfo) {
+  return `
+    <div class="section">
+      <div class="section-title">Sucursal</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Dirección</th>
+            <th>URL Maps</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${sucursalInfo.direccion}</td>
+            <td><a href="${sucursalInfo.urlMaps}" class="maps-link" target="_blank">Ver en Maps</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// Generar tabla de consola
+function generateConsolaTable(consolaInfo) {
+  const hasData = consolaInfo.ip !== 'No disponible' && consolaInfo.mac !== 'No disponible' && consolaInfo.url !== 'No disponible';
+  
+  if (!hasData) {
+    return `
+      <div class="section">
+        <div class="section-title">Consola</div>
+        <table class="table">
+          <tbody>
+            <tr>
+              <td colspan="3" style="text-align: center; color: #7f8c8d; font-style: italic; padding: 20px;">
+                No hay información de consola disponible para esta IP
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  
+  return `
+    <div class="section">
+      <div class="section-title">Consola</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>MAC</th>
+            <th>URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${consolaInfo.ip}</td>
+            <td>${consolaInfo.mac}</td>
+            <td><a href="${consolaInfo.url}" target="_blank" class="maps-link">${consolaInfo.url}</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// Generar tabla de internet
+function generateInternetTable(internetInfo) {
+  let conexionesHtml = '';
+  
+  if (internetInfo.conexiones.length > 0) {
+    internetInfo.conexiones.forEach((conexion, index) => {
+      // Determinar clase de estado basada en valores comunes
+      let estadoClass = 'status-down';
+      const estado = (conexion.estado || '').toLowerCase();
+      
+      if (estado.includes('up') || estado.includes('activo') || estado.includes('ok') || estado.includes('conectado')) {
+        estadoClass = 'status-up';
+      }
+      
+      conexionesHtml += `
+        <div class="subtable">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Puerto</th>
+                <th>Configuración</th>
+                <th>IP</th>
+                <th>Estado (Último Check)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>${conexion.proveedor}</td>
+                <td>${conexion.puerto}</td>
+                <td>${conexion.configuracion}</td>
+                <td>${conexion.ip}</td>
+                <td><span class="${estadoClass}">${conexion.estado}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+  } else {
+    conexionesHtml = `
+      <div class="subtable">
+        <table class="table">
+          <tbody>
+            <tr>
+              <td colspan="5" style="text-align: center; color: #7f8c8d; font-style: italic;">
+                No hay información de conexiones disponible
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  
+  return `
+    <div class="section">
+      <div class="section-title">Internet</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Proveedor Primario</th>
+            <th>Cuenta Primario</th>
+            <th>Proveedor Secundario</th>
+            <th>Cuenta Secundario</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>${internetInfo.proveedores.primario}</td>
+            <td>${internetInfo.proveedores.cuentaPrimario}</td>
+            <td>${internetInfo.proveedores.secundario}</td>
+            <td>${internetInfo.proveedores.cuentaSecundario}</td>
+          </tr>
+        </tbody>
+      </table>
+      ${conexionesHtml}
+    </div>
+  `;
+}
+
+// Generar tabla de detalles del incidente
+function generateIncidentTable(pings, confirmacionCaida, pingsRecuperacion = null, confirmacionRecuperacion = null) {
+  let pingsHtml = '';
+  
+  pings.forEach(ping => {
+    const estadoClass = ping.estado === 'Exitoso' ? 'ping-success' : 'ping-failed';
+    pingsHtml += `
+      <tr>
+        <td>${ping.fecha}</td>
+        <td><span class="${estadoClass}">${ping.estado}</span></td>
+        <td>${ping.latencia}</td>
+      </tr>
+    `;
+  });
+  
+  let recuperacionSection = '';
+  if (pingsRecuperacion && confirmacionRecuperacion) {
+    let pingsRecuperacionHtml = '';
+    pingsRecuperacion.forEach(ping => {
+      const estadoClass = ping.estado === 'Exitoso' ? 'ping-success' : 'ping-failed';
+      pingsRecuperacionHtml += `
+        <tr>
+          <td>${ping.fecha}</td>
+          <td><span class="${estadoClass}">${ping.estado}</span></td>
+          <td>${ping.latencia}</td>
+        </tr>
+      `;
+    });
+    
+    recuperacionSection = `
+      <h4>Últimos 10 pings después de restablecimiento:</h4>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Latencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pingsRecuperacionHtml}
+        </tbody>
+      </table>
+      
+      <h4>Confirmación de Restablecimiento:</h4>
+      <table class="table">
+        <tbody>
+          <tr>
+            <td><strong>Fecha y hora:</strong></td>
+            <td>${confirmacionRecuperacion}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+  
+  return `
+    <div class="section">
+      <div class="section-title">Detalles del Incidente</div>
+      
+      <h4>Últimos 10 pings:</h4>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Latencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pingsHtml}
+        </tbody>
+      </table>
+      
+      <h4>Confirmación de caída:</h4>
+      <table class="table">
+        <tbody>
+          <tr>
+            <td><strong>Fecha y hora:</strong></td>
+            <td>${confirmacionCaida}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      ${recuperacionSection}
+    </div>
+  `;
+}
+
+// Generar correo HTML completo
+async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, incidentInfo) {
+  const template = await loadEmailTemplate();
+  const fecha = formatDate(new Date());
+  const hora = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  
+  let tipoClase, tituloHeader, asunto;
+  
+  if (tipo === 'caida') {
+    tipoClase = 'alert';
+    tituloHeader = `Enlace Caído - ${sucursalInfo.nombre}`;
+    asunto = `[Alerta] ${sucursalInfo.nombre} - Enlace Caído [${hora}]`;
+  } else {
+    tipoClase = 'recovery';
+    tituloHeader = `Enlace Restablecido - ${sucursalInfo.nombre}`;
+    asunto = `[Restablecimiento] ${sucursalInfo.nombre} - Enlace Arriba [${hora}]`;
+  }
+  
+  // Generar todas las tablas
+  const sucursalTable = generateSucursalTable(sucursalInfo);
+  const consolaTable = generateConsolaTable(consolaInfo);
+  const internetTable = generateInternetTable(internetInfo);
+  const incidentTable = generateIncidentTable(
+    incidentInfo.pings,
+    incidentInfo.confirmacionCaida,
+    incidentInfo.pingsRecuperacion,
+    incidentInfo.confirmacionRecuperacion
+  );
+  
+  const contenidoTablas = sucursalTable + consolaTable + internetTable + incidentTable;
+  
+  // Reemplazar placeholders en la plantilla
+  const htmlContent = template
+    .replace(/{{TITULO}}/g, asunto)
+    .replace(/{{TIPO_CLASE}}/g, tipoClase)
+    .replace(/{{TITULO_HEADER}}/g, tituloHeader)
+    .replace(/{{FECHA_GENERACION}}/g, fecha)
+    .replace(/{{CONTENIDO_TABLAS}}/g, contenidoTablas);
+  
+  return {
+    subject: asunto,
+    html: htmlContent
+  };
 }
 
 // Inicializa desde la DB
@@ -346,17 +822,40 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, newState.state, STATE_UP, evalResult);
-          // Enviar correo de recuperación siempre (no depende de enviar_correos_unstable)
-          await sendMailWithRetry(
-            `RECUPERADO: ${name} - Sistema Restablecido`,
-            `NOTIFICACIÓN DE RECUPERACIÓN DEL SISTEMA\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: OPERATIVO\n\n` +
-            `DETALLES DE LA RECUPERACIÓN:\n   • Último ping fallido: ${formatDate(evalResult.lastFailed ? evalResult.lastFailed.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastFailed ? evalResult.lastFailed.latency : 'N/A'}ms\n   • Confirmación de recuperación: ${formatDate(new Date(now))}\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `Este es un mensaje automático del Sistema de Monitoreo.\nFecha de generación: ${formatDate(new Date())}`
-          );
+          await logStateTransition(ipId, hostsStatus[ipId].state, STATE_UP, evalResult);
+          
+          // Generar correo HTML de recuperación
+          try {
+            const sucursalInfo = await getSucursalInfo(ipId);
+            const consolaInfo = await getConsolaInfo(ipId);
+            const internetInfo = await getInternetInfo(ipId);
+            
+            // Obtener pings antes de la recuperación (todos los pings recientes)
+            const pingsAnteriores = await getUltimosPings(ipId, 10);
+            
+            // Para pings después de restablecimiento, obtenemos los pings desde el momento actual
+            // hacia atrás unos minutos para capturar los pings de confirmación de recuperación
+            const momentoRecuperacion = now;
+            const pingsRecuperacion = await getUltimosPings(ipId, 10, momentoRecuperacion - 5 * 60 * 1000); // últimos 5 minutos
+            
+            const incidentInfo = {
+              pings: pingsAnteriores,
+              confirmacionCaida: evalResult.lastFailed ? formatDate(evalResult.lastFailed.fecha) : 'No disponible',
+              pingsRecuperacion: pingsRecuperacion.length > 0 ? pingsRecuperacion : null,
+              confirmacionRecuperacion: formatDate(new Date(now))
+            };
+            
+            const emailData = await generateEmailHTML('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
+            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            
+          } catch (emailError) {
+            console.error('Error generando correo de recuperación:', emailError);
+            // Fallback al correo simple
+            await sendMailWithRetry(
+              `RECUPERADO: ${name} - Sistema Restablecido`,
+              `Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+            );
+          }
         }
         break;
       case STATE_DOWN:
@@ -371,17 +870,35 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false
           };
           changed = true;
-          await logStateTransition(ipId, newState.state, STATE_DOWN, evalResult);
-          // Enviar correo de caída siempre
-          await sendMailWithRetry(
-            `ALERTA: ${name} - Sistema Caído`,
-            `NOTIFICACIÓN DE CAÍDA DEL SISTEMA\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `INFORMACIÓN DEL HOST:\n   • Nombre: ${name}\n   • Dirección IP: ${ip}\n   • Estado: CAÍDO\n\n` +
-            `DETALLES DEL INCIDENTE:\n   • Último ping exitoso: ${formatDate(evalResult.lastSuccess ? evalResult.lastSuccess.fecha : null)}\n   • Tiempo de respuesta: ${evalResult.lastSuccess ? evalResult.lastSuccess.latency : 'N/A'}ms\n   • Confirmación de caída: ${formatDate(new Date(now))}\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-            `Este es un mensaje automático del Sistema de Monitoreo.\nFecha de generación: ${formatDate(new Date())}`
-          );
+          await logStateTransition(ipId, hostsStatus[ipId].state, STATE_DOWN, evalResult);
+          
+          // Generar correo HTML de caída
+          try {
+            const sucursalInfo = await getSucursalInfo(ipId);
+            const consolaInfo = await getConsolaInfo(ipId);
+            const internetInfo = await getInternetInfo(ipId);
+            
+            // Obtener últimos pings
+            const pingsAnteriores = await getUltimosPings(ipId, 10);
+            
+            const incidentInfo = {
+              pings: pingsAnteriores,
+              confirmacionCaida: formatDate(new Date(now)),
+              pingsRecuperacion: null,
+              confirmacionRecuperacion: null
+            };
+            
+            const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
+            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            
+          } catch (emailError) {
+            console.error('Error generando correo de caída:', emailError);
+            // Fallback al correo simple
+            await sendMailWithRetry(
+              `ALERTA: ${name} - Sistema Caído`,
+              `Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+            );
+          }
         }
         break;
       default:
