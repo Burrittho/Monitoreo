@@ -9,11 +9,9 @@ let CHECK_INTERVAL = 30000; // valor por defecto, se sobrescribe por config
 // Umbral de tiempo mínimo en recuperación para considerar el sistema como UP (en ms)
 const THRESHOLD_UP = 60000; // 60 segundos
 
-// Número de éxitos consecutivos requeridos para considerar el sistema como UP
-let CONSECUTIVE_SUCCESSES_REQUIRED = 3;
-let CONSECUTIVE_FAILURES_REQUIRED = 3;
-let SEQUENCE_WINDOW_MINUTES = 10;
-let THRESHOLD_DOWN = 60000; // 60 segundos
+// Número de minutos consecutivos requeridos para cambio de estado
+let CONSECUTIVE_MINUTES_REQUIRED = 4;
+let SEQUENCE_WINDOW_MINUTES = 5;
 
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';
@@ -274,22 +272,16 @@ async function startWorker(poolConnection) {
   try {
     const conn = await pool.getConnection();
     const [rows] = await conn.query(
-      "SELECT clave, valor FROM config WHERE clave IN ('minutos_consecutivos_requeridos', 'tiempo_ventana_minutos', 'fallos_consecutivos_requeridos', 'umbral_caida_minutos', 'intervalo_revision_minutos', 'tiempo_minimo_entre_correos', 'habilitar_estado_unstable', 'enviar_correos_unstable', 'debug_logging', 'latencia_maxima_aceptable')"
+      "SELECT clave, valor FROM config WHERE clave IN ('minutos_consecutivos_requeridos', 'tiempo_ventana_minutos', 'intervalo_revision_minutos', 'tiempo_minimo_entre_correos', 'habilitar_estado_unstable', 'enviar_correos_unstable', 'debug_logging', 'latencia_maxima_aceptable')"
     );
     conn.release();
     rows.forEach(row => {
       switch(row.clave) {
         case 'minutos_consecutivos_requeridos':
-          CONSECUTIVE_SUCCESSES_REQUIRED = parseInt(row.valor) || CONSECUTIVE_SUCCESSES_REQUIRED;
-          break;
-        case 'fallos_consecutivos_requeridos':
-          CONSECUTIVE_FAILURES_REQUIRED = parseInt(row.valor) || CONSECUTIVE_FAILURES_REQUIRED;
+          CONSECUTIVE_MINUTES_REQUIRED = parseInt(row.valor) || CONSECUTIVE_MINUTES_REQUIRED;
           break;
         case 'tiempo_ventana_minutos':
           SEQUENCE_WINDOW_MINUTES = parseInt(row.valor) || SEQUENCE_WINDOW_MINUTES;
-          break;
-        case 'umbral_caida_minutos':
-          THRESHOLD_DOWN = (parseInt(row.valor) || (THRESHOLD_DOWN/60000)) * 60 * 1000;
           break;
         case 'intervalo_revision_minutos':
           CHECK_INTERVAL = (parseInt(row.valor) || (CHECK_INTERVAL/60000)) * 60 * 1000;
@@ -312,11 +304,9 @@ async function startWorker(poolConnection) {
       }
     });
     if (config.debug_logging) {
-      console.log('[N+1] Configuración dinámica aplicada:', {
-        CONSECUTIVE_SUCCESSES_REQUIRED,
-        CONSECUTIVE_FAILURES_REQUIRED,
+      console.log('Configuración dinámica aplicada:', {
+        CONSECUTIVE_MINUTES_REQUIRED,
         SEQUENCE_WINDOW_MINUTES,
-        THRESHOLD_DOWN,
         CHECK_INTERVAL,
         ...config
       });
@@ -369,10 +359,10 @@ async function evaluateWindowState(ipId, now) {
     minuteStates.sort((a, b) => a.minute - b.minute);
     // Busca bloques de N minutos consecutivos de OK o FAIL
     let blockOK = null, blockFAIL = null;
-    for (let i = 0; i <= minuteStates.length - CONSECUTIVE_SUCCESSES_REQUIRED; i++) {
-      const okBlock = minuteStates.slice(i, i + CONSECUTIVE_SUCCESSES_REQUIRED);
+    for (let i = 0; i <= minuteStates.length - CONSECUTIVE_MINUTES_REQUIRED; i++) {
+      const okBlock = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
       if (okBlock.every(m => m.state === 'OK')) blockOK = okBlock;
-      const failBlock = minuteStates.slice(i, i + CONSECUTIVE_FAILURES_REQUIRED);
+      const failBlock = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
       if (failBlock.every(m => m.state === 'FAIL')) blockFAIL = failBlock;
       if (blockOK || blockFAIL) break;
     }
