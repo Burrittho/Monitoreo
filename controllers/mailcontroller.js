@@ -438,8 +438,8 @@ async function checkHost({ id: ipId, ip, name }) {
             lastStateChange: Date.now()
           };
           await connection.query(
-            `INSERT INTO host_state (ip_id, state, up_since, last_check_time)
-             VALUES (?, ?, NOW(), NOW())`,
+            `INSERT INTO host_state (ip_id, state, up_since)
+             VALUES (?, ?, NOW())`,
             [ipId, STATE_UP]
           );
         }
