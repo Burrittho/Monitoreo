@@ -15,7 +15,7 @@ let CONSECUTIVE_FAILURES_REQUIRED = 3;
 let SEQUENCE_WINDOW_MINUTES = 10;
 let THRESHOLD_DOWN = 60000; // 60 segundos
 
-// Estados del sistema N+1 (solo 3 estados)
+// Estados del sistema N+1 (solo 3 estados);;;
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';
 const STATE_UNSTABLE = 'UNSTABLE';
