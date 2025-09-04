@@ -6,9 +6,6 @@ let pool = null;
 // Configuración de intervalos
 let CHECK_INTERVAL = 30000; // valor por defecto, se sobrescribe por config
 
-// Umbral de tiempo mínimo en recuperación para considerar el sistema como UP (en ms)
-const THRESHOLD_UP = 60000; // 60 segundos
-
 // Número de minutos consecutivos requeridos para cambio de estado
 let CONSECUTIVE_MINUTES_REQUIRED = 4;
 let SEQUENCE_WINDOW_MINUTES = 5;
@@ -26,57 +23,6 @@ let config = {
   latencia_maxima_aceptable: 1500
 };
 let hostsStatus = {};
-
-// --- FUNCIONES AUXILIARES ---
-function formatDuration(ms) {
-  // Asegurarse que la duración nunca sea negativa
-  ms = Math.max(0, ms);
-  
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
-  } else {
-    return `${seconds}s`;
-  }
-}
-
-// Función para formatear una fecha en formato corto
-function formatDate(dateValue) {
-  if (!dateValue) return 'No disponible';
-  try {
-    if (typeof dateValue === 'string') {
-      return new Date(dateValue).toLocaleString();
-    }
-    return dateValue.toLocaleString();
-  } catch (error) {
-    return 'Fecha inválida';
-  }
-}
-
-// Función para validar timestamps y asegurar que son fechas válidas
-function validateTimestamp(timestamp, fallbackTimestamp) {
-  if (!timestamp || isNaN(timestamp)) {
-    console.warn(`⚠️ Timestamp inválido detectado: ${timestamp}, usando fallback: ${new Date(fallbackTimestamp).toISOString()}`);
-    return fallbackTimestamp;
-  }
-  return timestamp;
-}
-
-// Función para determinar si se debe enviar una notificación
-function shouldSendNotification(currentState, prevState, prevNotifySent, notificationType) {
-  // Si el estado no ha cambiado, no enviar notificación
-  if (currentState === prevState) return false;
-  
-  // Si nunca se ha enviado notificación o es de un tipo diferente, enviar
-  if (!prevNotifySent || prevNotifySent !== notificationType) return true;
-  
-  // Control de frecuencia de notificaciones del mismo tipo
-  return false;
-}
 
 // --- HELPERS PARA ENCONTRAR MOMENTOS EXACTOS DE TRANSICIÓN ---
 // Obtener el último ping exitoso antes de una fecha específica
@@ -117,73 +63,16 @@ async function getLastFailedPing(ipId, beforeTime) {
   }
 }
 
-// Buscar LOG exacto de UNSTABLE (primer ping fallido)
-async function getExactUnstableTime(ipId, currentFecha) {
-  const conn = await pool.getConnection();
+// Función para formatear una fecha en formato corto
+function formatDate(dateValue) {
+  if (!dateValue) return 'No disponible';
   try {
-    const [rows] = await conn.query(
-      `SELECT fecha FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha <= ? ORDER BY fecha DESC LIMIT 1`,
-      [ipId, new Date(currentFecha)]
-    );
-    if (rows.length > 0) {
-      return { timestamp: rows[0].fecha.getTime(), fecha: rows[0].fecha };
+    if (typeof dateValue === 'string') {
+      return new Date(dateValue).toLocaleString();
     }
-    return { timestamp: currentFecha, fecha: new Date(currentFecha) };
-  } finally {
-    conn.release();
-  }
-}
-
-// Buscar log exacto de DOWN (debe encontrar una secuencia de fallos consecutivos)
-async function getExactDownTime(ipId, referenceTime) {
-  const conn = await pool.getConnection();
-  try {
-    const [rows] = await conn.query(
-      `SELECT fecha FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha >= ? ORDER BY fecha ASC LIMIT 1`,
-      [ipId, new Date(referenceTime)]
-    );
-    if (rows.length > 0) {
-      return { timestamp: rows[0].fecha.getTime(), fecha: rows[0].fecha };
-    }
-    return { timestamp: referenceTime, fecha: new Date(referenceTime) };
-  } finally {
-    conn.release();
-  }
-}
-
-
-// Buscar log que confirma UP (debe encontrar una secuencia de éxitos)
-async function getExactUpTime(ipId, referenceTime) {
-  const conn = await pool.getConnection();
-  try {
-    const [rows] = await conn.query(
-      `SELECT fecha FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha >= ? ORDER BY fecha ASC LIMIT 1`,
-      [ipId, new Date(referenceTime)]
-    );
-    if (rows.length > 0) {
-      return { timestamp: rows[0].fecha.getTime(), fecha: rows[0].fecha };
-    }
-    return { timestamp: referenceTime, fecha: new Date(referenceTime) };
-  } finally {
-    conn.release();
-  }
-}
-
-// Buscar el log exacto de recuperación desde UNSTABLE si nunca hubo caída
-// Buscar el primer ping exitoso después de inestabilidad (para UNSTABLE → UP)
-async function getExactUPTimeFromUnstable(ipId, unstableSince) {
-  const conn = await pool.getConnection();
-  try {
-    const [rows] = await conn.query(
-      `SELECT fecha FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha >= ? ORDER BY fecha ASC LIMIT 1`,
-      [ipId, new Date(unstableSince)]
-    );
-    if (rows.length > 0) {
-      return { timestamp: rows[0].fecha.getTime(), fecha: rows[0].fecha };
-    }
-    return { timestamp: unstableSince, fecha: new Date(unstableSince) };
-  } finally {
-    conn.release();
+    return dateValue.toLocaleString();
+  } catch (error) {
+    return 'Fecha inválida';
   }
 }
 
