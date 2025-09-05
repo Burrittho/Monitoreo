@@ -78,6 +78,44 @@ function formatDate(dateValue) {
   }
 }
 
+// Función para calcular y formatear el tiempo transcurrido entre dos fechas
+function formatDuration(startTime, endTime) {
+  if (!startTime || !endTime) return 'No disponible';
+  
+  try {
+    const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
+    const end = typeof endTime === 'string' ? new Date(endTime).getTime() : endTime;
+    
+    if (isNaN(start) || isNaN(end)) return 'Tiempo inválido';
+    
+    const diffMs = Math.abs(end - start);
+    
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+    
+    let result = [];
+    
+    if (days > 0) result.push(`${days} día${days !== 1 ? 's' : ''}`);
+    if (hours > 0) result.push(`${hours} hora${hours !== 1 ? 's' : ''}`);
+    if (minutes > 0) result.push(`${minutes} minuto${minutes !== 1 ? 's' : ''}`);
+    if (seconds > 0) result.push(`${seconds} segundo${seconds !== 1 ? 's' : ''}`);
+    
+    if (result.length === 0) return 'Menos de 1 segundo';
+    
+    // Formatear la salida de manera elegante
+    if (result.length === 1) return result[0];
+    if (result.length === 2) return result.join(' y ');
+    
+    const last = result.pop();
+    return result.join(', ') + ' y ' + last;
+    
+  } catch (error) {
+    return 'Error calculando tiempo';
+  }
+}
+
 // --- FUNCIONES PARA CONSULTAR DATOS DE LAS TABLAS ---
 
 // Consultar información de sucursal
@@ -211,37 +249,6 @@ async function getInternetInfo(ipId) {
     }
     
     return result;
-  } finally {
-    conn.release();
-  }
-}
-
-// Consultar últimos pings
-async function getUltimosPings(ipId, limit = 10, afterTimestamp = null) {
-  const conn = await pool.getConnection();
-  try {
-    let query = `
-      SELECT success, latency, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp
-      FROM ping_logs 
-      WHERE ip_id = ?`;
-    let params = [ipId];
-    
-    if (afterTimestamp) {
-      query += ' AND UNIX_TIMESTAMP(fecha) * 1000 > ?';
-      params.push(afterTimestamp);
-    }
-    
-    query += ' ORDER BY fecha DESC LIMIT ?';
-    params.push(limit);
-    
-    const [pings] = await conn.query(query, params);
-    
-    return pings.map(ping => ({
-      fecha: formatDate(ping.fecha),
-      estado: ping.success ? 'Exitoso' : 'Fallido',
-      latencia: ping.success ? `${ping.latency}ms` : 'Timeout',
-      timestamp: ping.timestamp
-    }));
   } finally {
     conn.release();
   }
@@ -419,49 +426,10 @@ function generateInternetTable(internetInfo) {
 }
 
 // Generar tabla de detalles del incidente
-function generateIncidentTable(pings, confirmacionCaida, pingsRecuperacion = null, confirmacionRecuperacion = null) {
-  let pingsHtml = '';
-  
-  pings.forEach(ping => {
-    const estadoClass = ping.estado === 'Exitoso' ? 'ping-success' : 'ping-failed';
-    pingsHtml += `
-      <tr>
-        <td>${ping.fecha}</td>
-        <td><span class="${estadoClass}">${ping.estado}</span></td>
-        <td>${ping.latencia}</td>
-      </tr>
-    `;
-  });
-  
+function generateIncidentTable(confirmacionCaida, confirmacionRecuperacion = null, tiempoSinSistema = null) {
   let recuperacionSection = '';
-  if (pingsRecuperacion && confirmacionRecuperacion) {
-    let pingsRecuperacionHtml = '';
-    pingsRecuperacion.forEach(ping => {
-      const estadoClass = ping.estado === 'Exitoso' ? 'ping-success' : 'ping-failed';
-      pingsRecuperacionHtml += `
-        <tr>
-          <td>${ping.fecha}</td>
-          <td><span class="${estadoClass}">${ping.estado}</span></td>
-          <td>${ping.latencia}</td>
-        </tr>
-      `;
-    });
-    
+  if (confirmacionRecuperacion) {
     recuperacionSection = `
-      <h4>Últimos 10 pings después de restablecimiento:</h4>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Estado</th>
-            <th>Latencia</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pingsRecuperacionHtml}
-        </tbody>
-      </table>
-      
       <h4>Confirmación de Restablecimiento:</h4>
       <table class="table">
         <tbody>
@@ -471,26 +439,22 @@ function generateIncidentTable(pings, confirmacionCaida, pingsRecuperacion = nul
           </tr>
         </tbody>
       </table>
+      
+      <h4>Tiempo sin sistema:</h4>
+      <table class="table">
+        <tbody>
+          <tr>
+            <td><strong>Duración:</strong></td>
+            <td style="color: #e74c3c; font-weight: bold;">${tiempoSinSistema || 'No calculado'}</td>
+          </tr>
+        </tbody>
+      </table>
     `;
   }
   
   return `
     <div class="section">
       <div class="section-title">Detalles del Incidente</div>
-      
-      <h4>Últimos 10 pings:</h4>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Estado</th>
-            <th>Latencia</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pingsHtml}
-        </tbody>
-      </table>
       
       <h4>Confirmación de caída:</h4>
       <table class="table">
@@ -530,10 +494,9 @@ async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, 
   const consolaTable = generateConsolaTable(consolaInfo);
   const internetTable = generateInternetTable(internetInfo);
   const incidentTable = generateIncidentTable(
-    incidentInfo.pings,
     incidentInfo.confirmacionCaida,
-    incidentInfo.pingsRecuperacion,
-    incidentInfo.confirmacionRecuperacion
+    incidentInfo.confirmacionRecuperacion,
+    incidentInfo.tiempoSinSistema
   );
   
   const contenidoTablas = sucursalTable + consolaTable + internetTable + incidentTable;
@@ -566,7 +529,8 @@ async function initializeHostStates() {
         notifySent: row.notify_sent,
         notifyTime: row.notify_sent ? Date.now() : null, // Cuando se envió la última notificación
         lastCheckTime: Date.now(),
-        lastStateChange: Date.now() // Cuándo fue el último cambio de estado
+        lastStateChange: Date.now(), // Cuándo fue el último cambio de estado
+        originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null // Fecha original de caída
       };
     }
     console.log(`Estados inicializados para ${rows.length} hosts`);
@@ -778,7 +742,8 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: row.notify_sent,
             notifyTime: row.notify_sent ? Date.now() : null, // Cuando se envió la última notificación
             lastCheckTime: Date.now(),
-            lastStateChange: Date.now() // Cuándo fue el último cambio de estado
+            lastStateChange: Date.now(), // Cuándo fue el último cambio de estado
+            originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null // Fecha original de caída
           };
         } else {
           // Si no hay estado en la BD, inicializar como UP
@@ -790,7 +755,8 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false,
             notifyTime: null,
             lastCheckTime: Date.now(),
-            lastStateChange: Date.now()
+            lastStateChange: Date.now(),
+            originalDownTime: null // Fecha original de caída
           };
           await connection.query(
             `INSERT INTO host_state (ip_id, state, up_since)
@@ -830,19 +796,18 @@ async function checkHost({ id: ipId, ip, name }) {
             const consolaInfo = await getConsolaInfo(ipId);
             const internetInfo = await getInternetInfo(ipId);
             
-            // Obtener pings antes de la recuperación (todos los pings recientes)
-            const pingsAnteriores = await getUltimosPings(ipId, 10);
+            // Calcular tiempo sin sistema
+            const currentState = hostsStatus[ipId];
+            let tiempoSinSistema = 'No calculado';
             
-            // Para pings después de restablecimiento, obtenemos los pings desde el momento actual
-            // hacia atrás unos minutos para capturar los pings de confirmación de recuperación
-            const momentoRecuperacion = now;
-            const pingsRecuperacion = await getUltimosPings(ipId, 10, momentoRecuperacion - 5 * 60 * 1000); // últimos 5 minutos
+            if (currentState.originalDownTime) {
+              tiempoSinSistema = formatDuration(currentState.originalDownTime, now);
+            }
             
             const incidentInfo = {
-              pings: pingsAnteriores,
-              confirmacionCaida: evalResult.lastFailed ? formatDate(evalResult.lastFailed.fecha) : 'No disponible',
-              pingsRecuperacion: pingsRecuperacion.length > 0 ? pingsRecuperacion : null,
-              confirmacionRecuperacion: formatDate(new Date(now))
+              confirmacionCaida: currentState.originalDownTime ? formatDate(new Date(currentState.originalDownTime)) : 'No disponible',
+              confirmacionRecuperacion: formatDate(new Date(now)),
+              tiempoSinSistema: tiempoSinSistema
             };
             
             const emailData = await generateEmailHTML('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
@@ -867,7 +832,8 @@ async function checkHost({ id: ipId, ip, name }) {
             unstableSince: null,
             downSince: now,
             upSince: null,
-            notifySent: false
+            notifySent: false,
+            originalDownTime: now  // Guardar la fecha original de caída
           };
           changed = true;
           await logStateTransition(ipId, hostsStatus[ipId].state, STATE_DOWN, evalResult);
@@ -878,14 +844,10 @@ async function checkHost({ id: ipId, ip, name }) {
             const consolaInfo = await getConsolaInfo(ipId);
             const internetInfo = await getInternetInfo(ipId);
             
-            // Obtener últimos pings
-            const pingsAnteriores = await getUltimosPings(ipId, 10);
-            
             const incidentInfo = {
-              pings: pingsAnteriores,
               confirmacionCaida: formatDate(new Date(now)),
-              pingsRecuperacion: null,
-              confirmacionRecuperacion: null
+              confirmacionRecuperacion: null,
+              tiempoSinSistema: null  // No aplica en correos de caída
             };
             
             const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
