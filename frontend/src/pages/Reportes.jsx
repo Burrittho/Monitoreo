@@ -392,11 +392,11 @@ export default function Reportes() {
                 <select 
                   value={internetSucursalFilter} 
                   onChange={e => setInternetSucursalFilter(e.target.value)}
-                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400"
                 >
-                  <option value="">Todas las sucursales</option>
+                  <option value="" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">Todas las sucursales</option>
                   {sucursales.map(s => (
-                    <option key={s.id} value={s.id}>
+                    <option key={s.id} value={s.id} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                       {s.name}
                     </option>
                   ))}
@@ -404,12 +404,12 @@ export default function Reportes() {
                 <select 
                   value={internetLimit} 
                   onChange={e => {setInternetLimit(Number(e.target.value)); setInternetPage(1)}} 
-                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400"
                 >
-                  <option value={10}>10 filas</option>
-                  <option value={20}>20 filas</option>
-                  <option value={30}>30 filas</option>
-                  <option value={50}>50 filas</option>
+                  <option value={10} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">10 filas</option>
+                  <option value={20} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">20 filas</option>
+                  <option value={30} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">30 filas</option>
+                  <option value={50} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">50 filas</option>
                 </select>
               </div>
             </div>
@@ -460,11 +460,11 @@ export default function Reportes() {
                   onChange={(e) => {
                     setServicesFilters(prev => ({ ...prev, sucursal: e.target.value }));
                   }}
-                  className="block w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="block w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400"
                 >
-                  <option value="">Todas las sucursales</option>
+                  <option value="" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">Todas las sucursales</option>
                   {sucursales.map(s => (
-                    <option key={s.id} value={s.id}>
+                    <option key={s.id} value={s.id} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                       {s.name}
                     </option>
                   ))}
@@ -587,9 +587,9 @@ export default function Reportes() {
                       onChange={e => setFilterSucursal(e.target.value)} 
                       className="block w-auto px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 shadow-sm"
                     >
-                      <option value="">Todas las sucursales</option>
+                      <option value="" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">Todas las sucursales</option>
                       {sucursales.map(s => (
-                        <option key={s.id} value={s.id}>
+                        <option key={s.id} value={s.id} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                           {s.name}
                         </option>
                       ))}
