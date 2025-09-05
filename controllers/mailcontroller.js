@@ -118,6 +118,34 @@ function formatDuration(startTime, endTime) {
 
 // --- FUNCIONES PARA CONSULTAR DATOS DE LAS TABLAS ---
 
+// Consultar configuración de correos desde la base de datos
+async function getMailConfiguration() {
+  const conn = await pool.getConnection();
+  try {
+    // Obtener correos destinatarios
+    const [mailToRows] = await conn.query('SELECT email FROM mail_to WHERE activo = 1');
+    const mailTo = mailToRows.map(row => row.email);
+    
+    // Obtener correo remitente (debería ser uno solo)
+    const [[mailFromRow]] = await conn.query('SELECT email FROM mail_from WHERE activo = 1 LIMIT 1');
+    const mailFrom = mailFromRow ? mailFromRow.email : null;
+    
+    return {
+      from: mailFrom,
+      to: mailTo
+    };
+  } catch (error) {
+    console.error('Error al consultar configuración de correos:', error);
+    // Fallback a variables de entorno si hay error en la consulta
+    return {
+      from: process.env.MAIL_FROM,
+      to: process.env.MAIL_TO ? process.env.MAIL_TO.split(',') : []
+    };
+  } finally {
+    conn.release();
+  }
+}
+
 // Consultar información de sucursal
 async function getSucursalInfo(ipId) {
   const conn = await pool.getConnection();
@@ -810,15 +838,21 @@ async function checkHost({ id: ipId, ip, name }) {
               tiempoSinSistema: tiempoSinSistema
             };
             
+            // Obtener configuración de correos desde la base de datos
+            const mailConfig = await getMailConfiguration();
+            
             const emailData = await generateEmailHTML('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            await sendMailWithRetry(emailData.subject, emailData.html, true, mailConfig); // true para HTML
             
           } catch (emailError) {
             console.error('Error generando correo de recuperación:', emailError);
             // Fallback al correo simple
+            const mailConfig = await getMailConfiguration();
             await sendMailWithRetry(
               `RECUPERADO: ${name} - Sistema Restablecido`,
-              `Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+              `Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}`,
+              false,
+              mailConfig
             );
           }
         }
@@ -850,15 +884,21 @@ async function checkHost({ id: ipId, ip, name }) {
               tiempoSinSistema: null  // No aplica en correos de caída
             };
             
+            // Obtener configuración de correos desde la base de datos
+            const mailConfig = await getMailConfiguration();
+            
             const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            await sendMailWithRetry(emailData.subject, emailData.html, true, mailConfig); // true para HTML
             
           } catch (emailError) {
             console.error('Error generando correo de caída:', emailError);
             // Fallback al correo simple
+            const mailConfig = await getMailConfiguration();
             await sendMailWithRetry(
               `ALERTA: ${name} - Sistema Caído`,
-              `Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+              `Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}`,
+              false,
+              mailConfig
             );
           }
         }
