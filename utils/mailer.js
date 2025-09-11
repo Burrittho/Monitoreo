@@ -1,32 +1,63 @@
-// Importar la configuración del transporte desde authmail.js
-const transporter = require('../config/authmail');
+const nodemailer = require("nodemailer");
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const pool = require('../config/db'); // Tu pool de conexiones MySQL
 
-// Función asincrónica para enviar correo electrónico
-async function sendMail(subject, content, isHtml = false) {
-    try {
-        // Configurar detalles del correo
-        const mailOptions = {
-            from: process.env.MAIL_FROM,  // Dirección de correo que se mostrará como "De"
-            to: process.env.MAIL_TO,      // Dirección de correo del destinatario
-            subject: subject              // Asunto del correo
-        };
+async function sendEmail(subject, htmlContent) {
+  const conn = await pool.getConnection();
+  try {
+    // 1. Obtener SMTP activo
+    const [smtpRows] = await conn.query(
+      "SELECT host, port FROM smtp_config WHERE is_active = 1 LIMIT 1"
+    );
+    if (smtpRows.length === 0) throw new Error("No hay configuración SMTP activa");
 
-        // Agregar el contenido como HTML o texto plano según el parámetro
-        if (isHtml) {
-            mailOptions.html = content;
-        } else {
-            mailOptions.text = content;
-        }
+    const smtpConfig = smtpRows[0];
 
-        // Enviar el correo
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Correo enviado:', info.messageId);  // Loguear el ID del mensaje enviado
-    } catch (error) {
-        console.error('Error al enviar el correo:', error);  // Loguear el error si ocurre
-    }
+    // 2. Obtener remitente activo
+    const [fromRows] = await conn.query(
+      "SELECT email FROM mail_from WHERE is_active = 1 LIMIT 1"
+    );
+    if (fromRows.length === 0) throw new Error("No hay remitente activo");
+
+    const from = fromRows[0].email;
+
+    // 3. Obtener destinatarios
+    const [toRows] = await conn.query(
+      "SELECT email, type FROM mail_to WHERE is_active = 1"
+    );
+    if (toRows.length === 0) throw new Error("No hay destinatarios activos");
+
+    const to = toRows.filter(r => r.type === "TO").map(r => r.email);
+    const cc = toRows.filter(r => r.type === "CC").map(r => r.email);
+    const bcc = toRows.filter(r => r.type === "BCC").map(r => r.email);
+
+    // 4. Crear transportador sin autenticación
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: false, // No TLS
+      tls: { rejectUnauthorized: false } // útil si es relay interno
+    });
+
+    // 5. Enviar correo
+    const info = await transporter.sendMail({
+      from,
+      to: to.length > 0 ? to.join(",") : undefined,
+      cc: cc.length > 0 ? cc.join(",") : undefined,
+      bcc: bcc.length > 0 ? bcc.join(",") : undefined,
+      subject,
+      html: htmlContent
+    });
+
+    console.log("✅ Correo enviado:", info.messageId);
+    return true;
+  } catch (err) {
+    console.error("❌ Error enviando correo:", err.message);
+    return false;
+  } finally {
+    conn.release();
+  }
 }
 
-// Exportar la función para enviar correos para usar en otros módulos
-module.exports = {
-    sendMail
-};
+module.exports = { sendEmail };

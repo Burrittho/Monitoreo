@@ -1,4 +1,4 @@
-const { sendMailWithRetry } = require('../models/mailretry');
+const { sendMonitoringEmail } = require('../services/emailService');
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -9,8 +9,8 @@ let pool = null;
 let CHECK_INTERVAL = 30000; // valor por defecto, se sobrescribe por config
 
 // Número de minutos consecutivos requeridos para cambio de estado
-let CONSECUTIVE_MINUTES_REQUIRED = 4;
-let SEQUENCE_WINDOW_MINUTES = 5;
+let CONSECUTIVE_MINUTES_REQUIRED = 5;
+let SEQUENCE_WINDOW_MINUTES = 6;
 
 const STATE_UP = 'UP';
 const STATE_DOWN = 'DOWN';
@@ -19,9 +19,9 @@ const STATE_UNSTABLE = 'UNSTABLE';
 // Cache de configuración y estados
 let config = {
   tiempo_minimo_entre_correos: 5 * 60 * 1000,
-  habilitar_estado_unstable: true,
+  habilitar_estado_unstable: false,
   enviar_correos_unstable: false,
-  debug_logging: true,
+  debug_logging: false,
   latencia_maxima_aceptable: 1500
 };
 let hostsStatus = {};
@@ -625,7 +625,7 @@ async function startWorker(poolConnection) {
           config.enviar_correos_unstable = row.valor.toLowerCase() === 'true';
           break;
         case 'debug_logging':
-          config.debug_logging = row.valor.toLowerCase() === 'true';
+          config.debug_logging = row.valor.toLowerCase() === 'false';
           break;
         case 'latencia_maxima_aceptable':
           config.latencia_maxima_aceptable = parseInt(row.valor) || config.latencia_maxima_aceptable;
@@ -641,7 +641,7 @@ async function startWorker(poolConnection) {
       });
     }
   } catch (err) {
-    console.error('Error leyendo configuración dinámica N+1:', err);
+    console.error('Error leyendo configuración dinámica :', err);
   }
 
   await initializeHostStates();
@@ -811,14 +811,14 @@ async function checkHost({ id: ipId, ip, name }) {
             };
             
             const emailData = await generateEmailHTML('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            await sendMonitoringEmail(emailData.subject, emailData.html);
             
           } catch (emailError) {
             console.error('Error generando correo de recuperación:', emailError);
             // Fallback al correo simple
-            await sendMailWithRetry(
+            await sendMonitoringEmail(
               `RECUPERADO: ${name} - Sistema Restablecido`,
-              `Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+              `<p>Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
             );
           }
         }
@@ -851,14 +851,14 @@ async function checkHost({ id: ipId, ip, name }) {
             };
             
             const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-            await sendMailWithRetry(emailData.subject, emailData.html, true); // true para HTML
+            await sendMonitoringEmail(emailData.subject, emailData.html);
             
           } catch (emailError) {
             console.error('Error generando correo de caída:', emailError);
             // Fallback al correo simple
-            await sendMailWithRetry(
+            await sendMonitoringEmail(
               `ALERTA: ${name} - Sistema Caído`,
-              `Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}`
+              `<p>Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
             );
           }
         }

@@ -22,7 +22,7 @@ async function hacerPingUbuntu(ips) {
         if (!ips.length) return resolve([]);
 
         // Comando para Ubuntu nativo (SIN wsl)
-        const comando = `fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
+        const comando = `wsl fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
 
         exec(comando, (error, stdout, stderr) => {
             const output = stdout || stderr;
@@ -71,29 +71,68 @@ async function hacerPingUbuntu(ips) {
     });
 }
 
-// Función para insertar el resultado del ping en la base de datos
-async function guardarPingEnBD(ip, latency, alive) {
+// Función para insertar múltiples resultados de ping en una sola transacción
+async function guardarPingsEnLote(resultados) {
+    if (!resultados.length) return;
+    
     let conn;
     try {
         conn = await pool.getConnection();
-        const [ipIdRow] = await conn.query("SELECT id FROM ips_dvr WHERE ip = ?", [ip]);
-        if (!ipIdRow || ipIdRow.length === 0) {
-            console.error(`[DVR] No se encontró el id de la IP ${ip}`);
-            return;
+        await conn.beginTransaction();
+        
+        // Preparar mapeo de IPs a IDs para evitar múltiples SELECT
+        const ips = [...new Set(resultados.map(r => r.ip))]; // IPs únicas
+        const ipIds = {};
+        
+        if (ips.length > 0) {
+            const placeholders = ips.map(() => '?').join(',');
+            const [ipRows] = await conn.query(
+                `SELECT id, ip FROM ips_dvr WHERE ip IN (${placeholders})`, 
+                ips
+            );
+            
+            ipRows.forEach(row => {
+                ipIds[row.ip] = row.id;
+            });
         }
-        const ipId = ipIdRow[0].id;
-        await conn.query(
-            "INSERT INTO ping_logs_dvr (ip_id, latency, success) VALUES (?, ?, ?)",
-            [ipId, latency, alive ? 1 : 0]
-        );
+        
+        // Preparar batch insert
+        const valores = [];
+        const parametros = [];
+        
+        resultados.forEach(resultado => {
+            const ipId = ipIds[resultado.ip];
+            if (ipId) {
+                valores.push('(?, ?, ?)');
+                parametros.push(ipId, resultado.latency, resultado.alive ? 1 : 0);
+            } else {
+                console.warn(`[DVR] IP ${resultado.ip} no encontrada en base de datos`);
+            }
+        });
+        
+        if (valores.length > 0) {
+            const query = `INSERT INTO ping_logs_dvr (ip_id, latency, success) VALUES ${valores.join(', ')}`;
+            await conn.query(query, parametros);
+        }
+        
+        await conn.commit();
+        
     } catch (err) {
-        console.error(`[DVR] Error al guardar ping de ${ip}:`, err.message);
+        if (conn) {
+            try {
+                await conn.rollback();
+            } catch (rollbackErr) {
+                console.error("[DVR] Error en rollback:", rollbackErr.message);
+            }
+        }
+        console.error("[DVR] Error al guardar pings en lote:", err.message);
+        throw err;
     } finally {
         if (conn) {
             try {
                 conn.release();
             } catch (releaseErr) {
-                console.error(`[DVR] Error al liberar conexión para ${ip}:`, releaseErr.message);
+                console.error("[DVR] Error al liberar conexión:", releaseErr.message);
             }
         }
     }
@@ -110,10 +149,9 @@ async function iniciarPings_dvrContinuos() {
             const ips = await obtenerIPs();
             
             if (ips.length > 0) {
-                const resultados = await hacerPingUbuntu(ips); // Cambiado de hacerPingWSL a hacerPingUbuntu
-                await Promise.all(resultados.map(r =>
-                    guardarPingEnBD(r.ip, r.latency, r.alive)
-                ));
+                const resultados = await hacerPingUbuntu(ips);
+                // Usar función de lote en lugar de Promise.all individual
+                await guardarPingsEnLote(resultados);
             }
         } catch (err) {
             console.error("[DVR] Error durante el ciclo de ping:", err.message);
