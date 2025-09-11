@@ -2,13 +2,135 @@ const { sendMonitoringEmail } = require('../services/emailService');
 const fs = require('fs').promises;
 const path = require('path');
 
-// Variable para el pool de conexiones
+// === CONNECTION MANAGER CON SESIONES PERSISTENTES ===
+class ConnectionManager {
+  constructor(pool) {
+    this.pool = pool;
+    this.connections = new Map(); // Map de conexiones por tipo de operación
+    this.lastUsed = new Map(); // Timestamp de último uso
+    this.maxIdleTime = 300000; // 5 minutos de idle antes de cerrar
+    this.maxConnections = 5; // Máximo 5 conexiones persistentes
+    
+    // Cleanup automático de conexiones idle
+    setInterval(() => this.cleanupIdleConnections(), 60000);
+  }
+  
+  async getConnection(operationType = 'default') {
+    // Si ya existe una conexión para este tipo, reutilizarla
+    if (this.connections.has(operationType)) {
+      const conn = this.connections.get(operationType);
+      
+      // Verificar que la conexión sigue activa
+      try {
+        await conn.query('SELECT 1');
+        this.lastUsed.set(operationType, Date.now());
+        return conn;
+      } catch (error) {
+        console.log(`Conexión ${operationType} expiró, creando nueva...`);
+        this.connections.delete(operationType);
+        this.lastUsed.delete(operationType);
+      }
+    }
+    
+    // Crear nueva conexión si no existe o expiró
+    if (this.connections.size < this.maxConnections) {
+      const conn = await this.pool.getConnection();
+      
+      // Configurar timeouts optimizados para sesión persistente
+      await conn.query('SET SESSION wait_timeout = 3600'); // 1 hora
+      await conn.query('SET SESSION interactive_timeout = 3600');
+      await conn.query('SET SESSION net_read_timeout = 120');
+      await conn.query('SET SESSION net_write_timeout = 120');
+      
+      this.connections.set(operationType, conn);
+      this.lastUsed.set(operationType, Date.now());
+      
+      console.log(`Nueva conexión persistente creada: ${operationType} (Total: ${this.connections.size})`);
+      return conn;
+    }
+    
+    // Si ya hay máximo de conexiones, usar una existente (round-robin)
+    const connectionTypes = Array.from(this.connections.keys());
+    const selectedType = connectionTypes[Math.floor(Math.random() * connectionTypes.length)];
+    const conn = this.connections.get(selectedType);
+    
+    this.lastUsed.set(selectedType, Date.now());
+    return conn;
+  }
+  
+  async executeQuery(sql, params = [], operationType = 'default', retries = 3) {
+    let attempt = 0;
+    
+    while (attempt < retries) {
+      try {
+        const conn = await this.getConnection(operationType);
+        const result = await conn.query(sql, params);
+        return result;
+        
+      } catch (error) {
+        console.error(`Query error (attempt ${attempt + 1}/${retries}) [${operationType}]:`, error.message);
+        
+        // Si es error de conexión, limpiar y reintentar
+        if (error.code === 'ER_CLIENT_INTERACTION_TIMEOUT' || 
+            error.code === 'PROTOCOL_CONNECTION_LOST' ||
+            error.code === 'ER_CONNECTION_LOST') {
+          
+          this.connections.delete(operationType);
+          this.lastUsed.delete(operationType);
+          attempt++;
+          
+          if (attempt < retries) {
+            console.log(`Reintentando query [${operationType}] en 1 segundo...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
+  }
+  
+  cleanupIdleConnections() {
+    const now = Date.now();
+    const toRemove = [];
+    
+    for (const [type, lastUsed] of this.lastUsed.entries()) {
+      if (now - lastUsed > this.maxIdleTime) {
+        toRemove.push(type);
+      }
+    }
+    
+    toRemove.forEach(type => {
+      const conn = this.connections.get(type);
+      if (conn) {
+        conn.release();
+        console.log(`Conexión idle liberada: ${type}`);
+      }
+      this.connections.delete(type);
+      this.lastUsed.delete(type);
+    });
+  }
+  
+  async closeAll() {
+    for (const [type, conn] of this.connections.entries()) {
+      try {
+        conn.release();
+        console.log(`Conexión cerrada: ${type}`);
+      } catch (error) {
+        console.error(`Error cerrando conexión ${type}:`, error.message);
+      }
+    }
+    this.connections.clear();
+    this.lastUsed.clear();
+  }
+}
+
+// Variable global para el connection manager
+let connectionManager = null;
 let pool = null;
 
 // Configuración de intervalos
-let CHECK_INTERVAL = 30000; // valor por defecto, se sobrescribe por config
-
-// Número de minutos consecutivos requeridos para cambio de estado
+let CHECK_INTERVAL = 30000;
 let CONSECUTIVE_MINUTES_REQUIRED = 5;
 let SEQUENCE_WINDOW_MINUTES = 6;
 
@@ -26,115 +148,62 @@ let config = {
 };
 let hostsStatus = {};
 
-// --- HELPERS PARA ENCONTRAR MOMENTOS EXACTOS DE TRANSICIÓN ---
-// Obtener el último ping exitoso antes de una fecha específica
+// === FUNCIONES OPTIMIZADAS CON CONNECTION MANAGER ===
+
 async function getLastSuccessfulPing(ipId, beforeTime) {
-  const conn = await pool.getConnection();
   try {
-    const [rows] = await conn.query(
+    const [rows] = await connectionManager.executeQuery(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
        CASE WHEN latency IS NOT NULL THEN latency ELSE 0 END as latency
        FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
-      [ipId, new Date(beforeTime)]
+      [ipId, new Date(beforeTime)],
+      'ping_queries'
     );
+    
     if (rows.length > 0) {
       return rows[0];
     }
     return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 0 };
-  } finally {
-    conn.release();
+  } catch (error) {
+    console.error(`Error obteniendo último ping exitoso para IP ${ipId}:`, error.message);
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 0 };
   }
 }
 
-// Obtener el último ping fallido antes de una fecha específica  
 async function getLastFailedPing(ipId, beforeTime) {
-  const conn = await pool.getConnection();
   try {
-    const [rows] = await conn.query(
+    const [rows] = await connectionManager.executeQuery(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
        CASE WHEN latency IS NOT NULL THEN latency ELSE 'timeout' END as latency
        FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
-      [ipId, new Date(beforeTime)]
+      [ipId, new Date(beforeTime)],
+      'ping_queries'
     );
+    
     if (rows.length > 0) {
       return rows[0];
     }
     return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 'timeout' };
-  } finally {
-    conn.release();
-  }
-}
-
-// Función para formatear una fecha en formato corto
-function formatDate(dateValue) {
-  if (!dateValue) return 'No disponible';
-  try {
-    if (typeof dateValue === 'string') {
-      return new Date(dateValue).toLocaleString();
-    }
-    return dateValue.toLocaleString();
   } catch (error) {
-    return 'Fecha inválida';
+    console.error(`Error obteniendo último ping fallido para IP ${ipId}:`, error.message);
+    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 'timeout' };
   }
 }
 
-// Función para calcular y formatear el tiempo transcurrido entre dos fechas
-function formatDuration(startTime, endTime) {
-  if (!startTime || !endTime) return 'No disponible';
-  
-  try {
-    const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
-    const end = typeof endTime === 'string' ? new Date(endTime).getTime() : endTime;
-    
-    if (isNaN(start) || isNaN(end)) return 'Tiempo inválido';
-    
-    const diffMs = Math.abs(end - start);
-    
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-    
-    let result = [];
-    
-    if (days > 0) result.push(`${days} día${days !== 1 ? 's' : ''}`);
-    if (hours > 0) result.push(`${hours} hora${hours !== 1 ? 's' : ''}`);
-    if (minutes > 0) result.push(`${minutes} minuto${minutes !== 1 ? 's' : ''}`);
-    if (seconds > 0) result.push(`${seconds} segundo${seconds !== 1 ? 's' : ''}`);
-    
-    if (result.length === 0) return 'Menos de 1 segundo';
-    
-    // Formatear la salida de manera elegante
-    if (result.length === 1) return result[0];
-    if (result.length === 2) return result.join(' y ');
-    
-    const last = result.pop();
-    return result.join(', ') + ' y ' + last;
-    
-  } catch (error) {
-    return 'Error calculando tiempo';
-  }
-}
-
-// --- FUNCIONES PARA CONSULTAR DATOS DE LAS TABLAS ---
-
-// Consultar información de sucursal
 async function getSucursalInfo(ipId) {
-  const conn = await pool.getConnection();
   try {
-    // Primero obtenemos la información básica del host
-    const [[ipInfo]] = await conn.query(
+    const [[ipInfo]] = await connectionManager.executeQuery(
       'SELECT ip, name FROM ips WHERE id = ?',
-      [ipId]
+      [ipId],
+      'info_queries'
     );
     
-    // Obtenemos información de la sucursal usando la relación correcta
-    // sucursal_id en proveedores_internet es FK de id en ips
-    const [[proveedorInfo]] = await conn.query(
+    const [[proveedorInfo]] = await connectionManager.executeQuery(
       `SELECT p.Direccion, p.Colonia, p.Ciudad, p.Estado, p.maps 
        FROM proveedores_internet p 
        WHERE p.sucursal_id = ?`,
-      [ipId]
+      [ipId],
+      'info_queries'
     );
     
     let direccionCompleta = 'No disponible';
@@ -158,25 +227,34 @@ async function getSucursalInfo(ipId) {
       direccion: direccionCompleta,
       urlMaps: urlMaps
     };
-  } finally {
-    conn.release();
+  } catch (error) {
+    console.error(`Error obteniendo información de sucursal para IP ${ipId}:`, error.message);
+    return {
+      nombre: 'Host desconocido',
+      ip: 'IP desconocida',
+      direccion: 'No disponible',
+      urlMaps: '#'
+    };
   }
 }
 
-// Consultar información de licencia/consola
 async function getConsolaInfo(ipId) {
-  const conn = await pool.getConnection();
   try {
-    const [[licenciaInfo]] = await conn.query(
+    const [[licenciaInfo]] = await connectionManager.executeQuery(
       `SELECT ip_id, mac, url, expiracion 
        FROM licencia 
        WHERE ip_id = ? 
        ORDER BY fecha DESC LIMIT 1`,
-      [ipId]
+      [ipId],
+      'info_queries'
     );
     
     if (licenciaInfo) {
-      const [[ipInfo]] = await conn.query('SELECT ip FROM ips WHERE id = ?', [ipId]);
+      const [[ipInfo]] = await connectionManager.executeQuery(
+        'SELECT ip FROM ips WHERE id = ?', 
+        [ipId],
+        'info_queries'
+      );
       return {
         ip: ipInfo ? ipInfo.ip : 'IP desconocida',
         mac: licenciaInfo.mac || 'No disponible',
@@ -189,31 +267,34 @@ async function getConsolaInfo(ipId) {
       mac: 'No disponible', 
       url: 'No disponible'
     };
-  } finally {
-    conn.release();
+  } catch (error) {
+    console.error(`Error obteniendo información de consola para IP ${ipId}:`, error.message);
+    return {
+      ip: 'No disponible',
+      mac: 'No disponible', 
+      url: 'No disponible'
+    };
   }
 }
 
-// Consultar información de internet y check_internet
 async function getInternetInfo(ipId) {
-  const conn = await pool.getConnection();
   try {
-    // Información de proveedores usando la relación correcta
-    const [[proveedorInfo]] = await conn.query(
+    const [[proveedorInfo]] = await connectionManager.executeQuery(
       `SELECT p.proveedor_primario, p.cuenta_primario, p.proveedor_secundario, p.cuenta_secundario
        FROM proveedores_internet p 
        WHERE p.sucursal_id = ?`,
-      [ipId]
+      [ipId],
+      'info_queries'
     );
     
-    // Información de check_internet (últimos datos)
-    const [[checkInfo]] = await conn.query(
+    const [[checkInfo]] = await connectionManager.executeQuery(
       `SELECT proveedor1, interfaz1, tipo1, ip1, trazado1, 
               proveedor2, interfaz2, tipo2, ip2, trazado2
        FROM check_internet 
        WHERE ip_id = ? 
        ORDER BY fecha DESC LIMIT 1`,
-      [ipId]
+      [ipId],
+      'info_queries'
     );
     
     const result = {
@@ -249,14 +330,71 @@ async function getInternetInfo(ipId) {
     }
     
     return result;
-  } finally {
-    conn.release();
+  } catch (error) {
+    console.error(`Error obteniendo información de internet para IP ${ipId}:`, error.message);
+    return {
+      proveedores: {
+        primario: 'No disponible',
+        cuentaPrimario: 'No disponible',
+        secundario: 'No disponible',
+        cuentaSecundario: 'No disponible'
+      },
+      conexiones: []
+    };
   }
 }
 
-// --- FUNCIONES PARA GENERAR HTML ---
+// === RESTO DE FUNCIONES (sin cambios en lógica, solo usando connectionManager) ===
 
-// Cargar plantilla HTML
+function formatDate(dateValue) {
+  if (!dateValue) return 'No disponible';
+  try {
+    if (typeof dateValue === 'string') {
+      return new Date(dateValue).toLocaleString();
+    }
+    return dateValue.toLocaleString();
+  } catch (error) {
+    return 'Fecha inválida';
+  }
+}
+
+function formatDuration(startTime, endTime) {
+  if (!startTime || !endTime) return 'No disponible';
+  
+  try {
+    const start = typeof startTime === 'string' ? new Date(startTime).getTime() : startTime;
+    const end = typeof endTime === 'string' ? new Date(endTime).getTime() : endTime;
+    
+    if (isNaN(start) || isNaN(end)) return 'Tiempo inválido';
+    
+    const diffMs = Math.abs(end - start);
+    
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+    
+    let result = [];
+    
+    if (days > 0) result.push(`${days} día${days !== 1 ? 's' : ''}`);
+    if (hours > 0) result.push(`${hours} hora${hours !== 1 ? 's' : ''}`);
+    if (minutes > 0) result.push(`${minutes} minuto${minutes !== 1 ? 's' : ''}`);
+    if (seconds > 0) result.push(`${seconds} segundo${seconds !== 1 ? 's' : ''}`);
+    
+    if (result.length === 0) return 'Menos de 1 segundo';
+    
+    if (result.length === 1) return result[0];
+    if (result.length === 2) return result.join(' y ');
+    
+    const last = result.pop();
+    return result.join(', ') + ' y ' + last;
+    
+  } catch (error) {
+    return 'Error calculando tiempo';
+  }
+}
+
+// === FUNCIONES HTML (sin cambios) ===
 async function loadEmailTemplate() {
   try {
     const templatePath = path.join(__dirname, '..', 'templates', 'email-template.html');
@@ -264,7 +402,6 @@ async function loadEmailTemplate() {
     return template;
   } catch (error) {
     console.error('Error al cargar plantilla HTML:', error);
-    // Plantilla de respaldo simple
     return `
       <html>
         <body style="font-family: Arial, sans-serif; padding: 20px;">
@@ -277,7 +414,6 @@ async function loadEmailTemplate() {
   }
 }
 
-// Generar tabla de sucursal
 function generateSucursalTable(sucursalInfo) {
   return `
     <div class="section">
@@ -300,7 +436,6 @@ function generateSucursalTable(sucursalInfo) {
   `;
 }
 
-// Generar tabla de consola
 function generateConsolaTable(consolaInfo) {
   const hasData = consolaInfo.ip !== 'No disponible' && consolaInfo.mac !== 'No disponible' && consolaInfo.url !== 'No disponible';
   
@@ -344,13 +479,11 @@ function generateConsolaTable(consolaInfo) {
   `;
 }
 
-// Generar tabla de internet
 function generateInternetTable(internetInfo) {
   let conexionesHtml = '';
   
   if (internetInfo.conexiones.length > 0) {
     internetInfo.conexiones.forEach((conexion, index) => {
-      // Determinar clase de estado basada en valores comunes
       let estadoClass = 'status-down';
       const estado = (conexion.estado || '').toLowerCase();
       
@@ -425,7 +558,6 @@ function generateInternetTable(internetInfo) {
   `;
 }
 
-// Generar tabla de detalles del incidente
 function generateIncidentTable(confirmacionCaida, confirmacionRecuperacion = null, tiempoSinSistema = null) {
   let recuperacionSection = '';
   if (confirmacionRecuperacion) {
@@ -471,7 +603,6 @@ function generateIncidentTable(confirmacionCaida, confirmacionRecuperacion = nul
   `;
 }
 
-// Generar correo HTML completo
 async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, incidentInfo) {
   const template = await loadEmailTemplate();
   const fecha = formatDate(new Date());
@@ -489,7 +620,6 @@ async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, 
     asunto = `[Restablecimiento] ${sucursalInfo.nombre} - Enlace Arriba [${hora}]`;
   }
   
-  // Generar todas las tablas
   const sucursalTable = generateSucursalTable(sucursalInfo);
   const consolaTable = generateConsolaTable(consolaInfo);
   const internetTable = generateInternetTable(internetInfo);
@@ -501,7 +631,6 @@ async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, 
   
   const contenidoTablas = sucursalTable + consolaTable + internetTable + incidentTable;
   
-  // Reemplazar placeholders en la plantilla
   const htmlContent = template
     .replace(/{{TITULO}}/g, asunto)
     .replace(/{{TIPO_CLASE}}/g, tipoClase)
@@ -515,11 +644,16 @@ async function generateEmailHTML(tipo, sucursalInfo, consolaInfo, internetInfo, 
   };
 }
 
-// Inicializa desde la DB
+// === FUNCIONES DE ESTADO (usando connectionManager) ===
+
 async function initializeHostStates() {
-  const connection = await pool.getConnection();
   try {
-    const [rows] = await connection.query('SELECT * FROM host_state');
+    const [rows] = await connectionManager.executeQuery(
+      'SELECT * FROM host_state',
+      [],
+      'state_management'
+    );
+    
     for (const row of rows) {
       hostsStatus[row.ip_id] = {
         state: row.state,
@@ -527,49 +661,41 @@ async function initializeHostStates() {
         downSince: row.down_since ? new Date(row.down_since).getTime() : null,
         upSince: row.up_since ? new Date(row.up_since).getTime() : null,
         notifySent: row.notify_sent,
-        notifyTime: row.notify_sent ? Date.now() : null, // Cuando se envió la última notificación
+        notifyTime: row.notify_sent ? Date.now() : null,
         lastCheckTime: Date.now(),
-        lastStateChange: Date.now(), // Cuándo fue el último cambio de estado
-        originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null // Fecha original de caída
+        lastStateChange: Date.now(),
+        originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null
       };
     }
-    console.log(`Estados inicializados para ${rows.length} hosts`);
+    console.log(`Estados inicializados para ${rows.length} hosts usando conexiones persistentes`);
   } catch (error) {
     console.error('Error al inicializar estados de host:', error);
-  } finally {
-    connection.release();
   }
 }
 
-// Guardar transición de estado en log
 async function logStateTransition(ipId, fromState, toState, details) {
-  const conn = await pool.getConnection();
   try {
-    await conn.query(
+    await connectionManager.executeQuery(
       `INSERT INTO state_transitions (ip_id, from_state, to_state, transition_time, details)
        VALUES (?, ?, ?, NOW(), ?)`,
-      [ipId, fromState, toState, JSON.stringify(details)]
+      [ipId, fromState, toState, JSON.stringify(details)],
+      'state_management'
     );
   } catch (error) {
     console.error('Error al guardar transición de estado:', error);
-  } finally {
-    conn.release();
   }
 }
 
-// Persiste el cambio de estado
 async function persistHostState(ipId, state, unstableSince, downSince, upSince, notifySent) {
-  const connection = await pool.getConnection();
   try {
-    await connection.beginTransaction();
-    await connection.query(`
+    await connectionManager.executeQuery(`
       INSERT INTO host_state (ip_id, state, unstable_since, down_since, up_since, notify_sent)
       VALUES (?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         state = VALUES(state),
         unstable_since = VALUES(unstable_since),
         down_since = VALUES(down_since),
-        up_since = VALUES(up_since),
+        up_since = VALUES(upSince),
         notify_sent = VALUES(notify_sent),
         updated_at = CURRENT_TIMESTAMP
     `, [
@@ -579,31 +705,34 @@ async function persistHostState(ipId, state, unstableSince, downSince, upSince, 
       downSince ? new Date(downSince) : null,
       upSince ? new Date(upSince) : null,
       notifySent
-    ]);
-    await connection.commit();
+    ], 'state_management');
   } catch (error) {
-    await connection.rollback();
     console.error('Error al persistir el estado:', error);
     throw error;
-  } finally {
-    connection.release();
   }
 }
 
-// Worker principal
+// === WORKER PRINCIPAL ===
 async function startWorker(poolConnection) {
-  console.log('Iniciando servicio de monitoreo de estado...');
+  console.log('Iniciando servicio de monitoreo con conexiones persistentes...');
   
-  // Asignar el pool recibido al módulo
   pool = poolConnection;
+  connectionManager = new ConnectionManager(pool);
 
-  // Leer configuración dinámica desde la base de datos
+  // Configurar shutdown graceful
+  process.on('SIGINT', async () => {
+    console.log('Cerrando conexiones persistentes...');
+    await connectionManager.closeAll();
+    process.exit(0);
+  });
+
   try {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query(
-      "SELECT clave, valor FROM config WHERE clave IN ('minutos_consecutivos_requeridos', 'tiempo_ventana_minutos', 'intervalo_revision_minutos', 'tiempo_minimo_entre_correos', 'habilitar_estado_unstable', 'enviar_correos_unstable', 'debug_logging', 'latencia_maxima_aceptable')"
+    const [rows] = await connectionManager.executeQuery(
+      "SELECT clave, valor FROM config WHERE clave IN ('minutos_consecutivos_requeridos', 'tiempo_ventana_minutos', 'intervalo_revision_minutos', 'tiempo_minimo_entre_correos', 'habilitar_estado_unstable', 'enviar_correos_unstable', 'debug_logging', 'latencia_maxima_aceptable')",
+      [],
+      'config'
     );
-    conn.release();
+    
     rows.forEach(row => {
       switch(row.clave) {
         case 'minutos_consecutivos_requeridos':
@@ -632,61 +761,74 @@ async function startWorker(poolConnection) {
           break;
       }
     });
+    
     if (config.debug_logging) {
-      console.log('Configuración dinámica aplicada:', {
+      console.log('Configuración con conexiones persistentes:', {
         CONSECUTIVE_MINUTES_REQUIRED,
         SEQUENCE_WINDOW_MINUTES,
         CHECK_INTERVAL,
+        maxConnections: connectionManager.maxConnections,
         ...config
       });
     }
   } catch (err) {
-    console.error('Error leyendo configuración dinámica :', err);
+    console.error('Error leyendo configuración:', err);
   }
 
   await initializeHostStates();
-  console.log('Estado inicial de hosts cargado desde DB');
+  console.log('Estado inicial cargado con conexiones persistentes');
 
   setInterval(async () => {
     try {
-      const connection = await pool.getConnection();
-      const [ips] = await connection.query('SELECT id, ip, name FROM ips');
-      connection.release();
-      await Promise.all(ips.map(host => checkHost(host)));
+      const [ips] = await connectionManager.executeQuery(
+        'SELECT id, ip, name FROM ips',
+        [],
+        'main_loop'
+      );
+      
+      // Procesar en lotes pequeños para no saturar
+      const batchSize = 3;
+      for (let i = 0; i < ips.length; i += batchSize) {
+        const batch = ips.slice(i, i + batchSize);
+        await Promise.all(batch.map(host => checkHost(host)));
+        
+        if (i + batchSize < ips.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
     } catch (error) {
       console.error('Worker error:', error);
     }
   }, CHECK_INTERVAL);
 }
 
-// --- MÁQUINA DE ESTADOS CON TODAS LAS TRANSICIONES ---
-// Evalúa la ventana de N+1 minutos y retorna el nuevo estado y los timestamps relevantes
 async function evaluateWindowState(ipId, now) {
   const windowMinutes = SEQUENCE_WINDOW_MINUTES + 1;
   const windowStart = new Date(now - windowMinutes * 60 * 1000);
-  const conn = await pool.getConnection();
+  
   try {
-    const [logs] = await conn.query(
+    const [logs] = await connectionManager.executeQuery(
       'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? AND fecha >= ? ORDER BY fecha ASC',
-      [ipId, windowStart]
+      [ipId, windowStart],
+      'window_evaluation'
     );
-    // Agrupa por minuto
+    
     const minutesMap = new Map();
     logs.forEach(log => {
       const minuteKey = Math.floor(log.timestamp / 60000);
       if (!minutesMap.has(minuteKey)) minutesMap.set(minuteKey, []);
       minutesMap.get(minuteKey).push(log.success);
     });
-    // Para cada minuto, si todos los pings son éxito, es minuto OK; si todos son fallo, es minuto FAIL; si mezcla, es MIX
+    
     const minuteStates = [];
     for (const [minute, arr] of minutesMap.entries()) {
       if (arr.every(s => s === 1)) minuteStates.push({ minute, state: 'OK' });
       else if (arr.every(s => s === 0)) minuteStates.push({ minute, state: 'FAIL' });
       else minuteStates.push({ minute, state: 'MIX' });
     }
-    // Ordena por minuto ascendente
+    
     minuteStates.sort((a, b) => a.minute - b.minute);
-    // Busca bloques de N minutos consecutivos de OK o FAIL
+    
     let blockOK = null, blockFAIL = null;
     for (let i = 0; i <= minuteStates.length - CONSECUTIVE_MINUTES_REQUIRED; i++) {
       const okBlock = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
@@ -695,44 +837,44 @@ async function evaluateWindowState(ipId, now) {
       if (failBlock.every(m => m.state === 'FAIL')) blockFAIL = failBlock;
       if (blockOK || blockFAIL) break;
     }
+    
     if (blockOK) {
-      // Estado UP, busca el último ping fallido antes del bloque
       const firstBlockMinute = blockOK[0].minute * 60000;
       const lastFailed = await getLastFailedPing(ipId, firstBlockMinute);
       return { state: STATE_UP, lastFailed };
     } else if (blockFAIL) {
-      // Estado DOWN, busca el último ping exitoso antes del bloque
       const firstBlockMinute = blockFAIL[0].minute * 60000;
       const lastSuccess = await getLastSuccessfulPing(ipId, firstBlockMinute);
       return { state: STATE_DOWN, lastSuccess };
     } else {
-      // Estado UNSTABLE
       return { state: STATE_UNSTABLE };
     }
-  } finally {
-    conn.release();
+  } catch (error) {
+    console.error(`Error evaluando estado de ventana para IP ${ipId}:`, error.message);
+    return { state: STATE_UNSTABLE };
   }
 }
+
 async function checkHost({ id: ipId, ip, name }) {
-  let conn;
   try {
-    conn = await pool.getConnection();
-    const [[lastLog]] = await conn.query(
+    const [[lastLog]] = await connectionManager.executeQuery(
       'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? ORDER BY fecha DESC LIMIT 1',
-      [ipId]
+      [ipId],
+      'host_checking'
     );
-    conn.release();
-    conn = null;
+    
     if (!lastLog) return;
 
     const now = lastLog.timestamp;
     
-    // Verificar si hay un estado existente para este host, si no, crear uno nuevo
     if (!hostsStatus[ipId]) {
-      // Intentar obtener el último estado registrado en la BD
-      const connection = await pool.getConnection();
       try {
-        const [[row]] = await connection.query('SELECT * FROM host_state WHERE ip_id = ?', [ipId]);
+        const [[row]] = await connectionManager.executeQuery(
+          'SELECT * FROM host_state WHERE ip_id = ?',
+          [ipId],
+          'state_management'
+        );
+        
         if (row) {
           hostsStatus[ipId] = {
             state: row.state,
@@ -740,13 +882,12 @@ async function checkHost({ id: ipId, ip, name }) {
             downSince: row.down_since ? new Date(row.down_since).getTime() : null,
             upSince: row.up_since ? new Date(row.up_since).getTime() : null,
             notifySent: row.notify_sent,
-            notifyTime: row.notify_sent ? Date.now() : null, // Cuando se envió la última notificación
+            notifyTime: row.notify_sent ? Date.now() : null,
             lastCheckTime: Date.now(),
-            lastStateChange: Date.now(), // Cuándo fue el último cambio de estado
-            originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null // Fecha original de caída
+            lastStateChange: Date.now(),
+            originalDownTime: row.down_since ? new Date(row.down_since).getTime() : null
           };
         } else {
-          // Si no hay estado en la BD, inicializar como UP
           hostsStatus[ipId] = {
             state: STATE_UP,
             unstableSince: null,
@@ -756,18 +897,16 @@ async function checkHost({ id: ipId, ip, name }) {
             notifyTime: null,
             lastCheckTime: Date.now(),
             lastStateChange: Date.now(),
-            originalDownTime: null // Fecha original de caída
+            originalDownTime: null
           };
-          await connection.query(
-            `INSERT INTO host_state (ip_id, state, up_since)
-             VALUES (?, ?, NOW())`,
-            [ipId, STATE_UP]
+          await connectionManager.executeQuery(
+            `INSERT INTO host_state (ip_id, state, up_since) VALUES (?, ?, NOW())`,
+            [ipId, STATE_UP],
+            'state_management'
           );
         }
       } catch (error) {
         console.error('Error al verificar estado en BD:', error);
-      } finally {
-        connection.release();
       }
     }
 
@@ -778,7 +917,6 @@ async function checkHost({ id: ipId, ip, name }) {
     switch (evalResult.state) {
       case STATE_UP:
         if (newState.state !== STATE_UP) {
-          // Transición a UP
           newState = {
             ...newState,
             state: STATE_UP,
@@ -790,13 +928,11 @@ async function checkHost({ id: ipId, ip, name }) {
           changed = true;
           await logStateTransition(ipId, hostsStatus[ipId].state, STATE_UP, evalResult);
           
-          // Generar correo HTML de recuperación
           try {
             const sucursalInfo = await getSucursalInfo(ipId);
             const consolaInfo = await getConsolaInfo(ipId);
             const internetInfo = await getInternetInfo(ipId);
             
-            // Calcular tiempo sin sistema
             const currentState = hostsStatus[ipId];
             let tiempoSinSistema = 'No calculado';
             
@@ -815,7 +951,6 @@ async function checkHost({ id: ipId, ip, name }) {
             
           } catch (emailError) {
             console.error('Error generando correo de recuperación:', emailError);
-            // Fallback al correo simple
             await sendMonitoringEmail(
               `RECUPERADO: ${name} - Sistema Restablecido`,
               `<p>Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
@@ -823,9 +958,9 @@ async function checkHost({ id: ipId, ip, name }) {
           }
         }
         break;
+        
       case STATE_DOWN:
         if (newState.state !== STATE_DOWN) {
-          // Transición a DOWN
           newState = {
             ...newState,
             state: STATE_DOWN,
@@ -833,12 +968,11 @@ async function checkHost({ id: ipId, ip, name }) {
             downSince: now,
             upSince: null,
             notifySent: false,
-            originalDownTime: now  // Guardar la fecha original de caída
+            originalDownTime: now
           };
           changed = true;
           await logStateTransition(ipId, hostsStatus[ipId].state, STATE_DOWN, evalResult);
           
-          // Generar correo HTML de caída
           try {
             const sucursalInfo = await getSucursalInfo(ipId);
             const consolaInfo = await getConsolaInfo(ipId);
@@ -847,7 +981,7 @@ async function checkHost({ id: ipId, ip, name }) {
             const incidentInfo = {
               confirmacionCaida: formatDate(new Date(now)),
               confirmacionRecuperacion: null,
-              tiempoSinSistema: null  // No aplica en correos de caída
+              tiempoSinSistema: null
             };
             
             const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
@@ -855,7 +989,6 @@ async function checkHost({ id: ipId, ip, name }) {
             
           } catch (emailError) {
             console.error('Error generando correo de caída:', emailError);
-            // Fallback al correo simple
             await sendMonitoringEmail(
               `ALERTA: ${name} - Sistema Caído`,
               `<p>Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
@@ -863,10 +996,8 @@ async function checkHost({ id: ipId, ip, name }) {
           }
         }
         break;
-      default:
-        // No acción
-        break;
     }
+    
     if (changed) {
       hostsStatus[ipId] = newState;
       console.log(`Estado actual de ${name} (${ip}):`);
@@ -875,6 +1006,7 @@ async function checkHost({ id: ipId, ip, name }) {
       console.log(`  - Caída: ${newState.downSince ? formatDate(new Date(newState.downSince)) : 'NULL'}`);
       console.log(`  - Recuperación: ${newState.upSince ? formatDate(newState.upSince ? new Date(newState.upSince) : null) : 'NULL'}`);
       console.log(`  - Notificación: ${newState.notifySent || 'NULL'}`);
+      
       await persistHostState(
         ipId,
         newState.state,
@@ -886,10 +1018,7 @@ async function checkHost({ id: ipId, ip, name }) {
     }
   } catch (error) {
     console.error(`Error procesando el host ${name} (${ip}):`, error);
-  } finally {
-    if (conn) conn.release();
   }
 }
 
-// Exportar la función principal para que pueda ser utilizada en server.js
 module.exports = { startWorker };
