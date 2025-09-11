@@ -15,57 +15,45 @@ async function obtenerIPs() {
         if (conn) conn.release();
     }
 }
-
-// Función para hacer ping a todas las IPs usando fping nativo de Ubuntu
-async function hacerPingUbuntu(ips) {
+// Función para hacer ping a todas las IPs usando fping
+async function hacerPing(ips) {
     return new Promise((resolve, reject) => {
         if (!ips.length) return resolve([]);
 
-        // Comando para Ubuntu nativo (SIN wsl)
-        const comando = `fping -c1 -t1500 ${ips.join(' ')} 2>&1`;
+        // Preparamos el comando WSL con fping (¡la magia está aquí!)
+        const comando = `fping -c1 -t1500 ${ips.join(' ')}`;
 
         exec(comando, (error, stdout, stderr) => {
-            const output = stdout || stderr;
+            const output = stderr || stdout;
             const resultados = [];
             const lineas = output.trim().split('\n');
-            
             lineas.forEach(linea => {
-                // Parseo para Ubuntu - formato: "192.168.1.1 : [0], 84 bytes, 1.23 ms (1.23 avg, 0% loss)"
-                const matchVivo = linea.match(/^([\d\.]+)\s+:\s+\[(\d+)\],.*?([\d\.]+)\s+ms\s+\(([\d\.]+)\s+avg/);
-                if (matchVivo) {
-                    const ip = matchVivo[1];
-                    const avg = parseFloat(matchVivo[4]);
+                // Parseo compatible con la salida de fping -c1
+                const match = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%.*min\/avg\/max = ([\d\.]+)\/([\d\.]+)\/([\d\.]+)/);
+                if (match) {
+                    const ip = match[1];
+                    const enviados = parseInt(match[2]);
+                    const recibidos = parseInt(match[3]);
+                    const perdida = parseInt(match[4]);
+                    const avg = parseFloat(match[6]);
                     resultados.push({
                         ip,
-                        alive: true,
+                        alive: recibidos > 0,
                         latency: avg
                     });
                 } else {
-                    // Para IPs que no responden - formato: "192.168.1.123 : xmt/rcv/%loss = 1/0/100%"
-                    const matchMuerto = linea.match(/^([\d\.]+)\s+:\s+.*?xmt\/rcv\/%loss\s+=\s+\d+\/\d+\/(\d+)%/);
-                    if (matchMuerto) {
-                        const ip = matchMuerto[1];
-                        const loss = parseInt(matchMuerto[2]);
+                    // Si la IP no responde, también puede haber una línea tipo: "192.168.1.123 : xmt/rcv/%loss = 1/0/100%"
+                    const noRespMatch = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%/);
+                    if (noRespMatch) {
+                        const ip = noRespMatch[1];
                         resultados.push({
                             ip,
-                            alive: loss < 100,
+                            alive: false,
                             latency: 0
                         });
-                    } else {
-                        // Formato alternativo para IPs muertas: "192.168.1.123 is unreachable"
-                        const matchUnreachable = linea.match(/^([\d\.]+)\s+is\s+unreachable/);
-                        if (matchUnreachable) {
-                            const ip = matchUnreachable[1];
-                            resultados.push({
-                                ip,
-                                alive: false,
-                                latency: 0
-                            });
-                        }
                     }
                 }
             });
-            
             resolve(resultados);
         });
     });
@@ -149,7 +137,7 @@ async function iniciarPings_dvrContinuos() {
             const ips = await obtenerIPs();
             
             if (ips.length > 0) {
-                const resultados = await hacerPingUbuntu(ips);
+                const resultados = await hacerPing(ips);
                 // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }

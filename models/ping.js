@@ -16,8 +16,8 @@ async function obtenerIPs() {
     }
 }
 
-// Función para hacer ping a todas las IPs usando fping en WSL
-async function hacerPingWSL(ips) {
+// Función para hacer ping a todas las IPs usando fping
+async function hacerPing(ips) {
     return new Promise((resolve, reject) => {
         if (!ips.length) return resolve([]);
 
@@ -138,7 +138,7 @@ async function iniciarPingsContinuos() {
             const ips = await obtenerIPs();
             
             if (ips.length > 0) {
-                const resultados = await hacerPingWSL(ips);
+                const resultados = await hacerPing(ips);
                 // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }
