@@ -1,4 +1,4 @@
-//const { exec } = require('child_process');
+const { exec } = require('child_process');
 const pool = require('../config/db'); // Tu pool de conexiones MySQL
 
 // Función para obtener la lista de IPs desde la base de datos
