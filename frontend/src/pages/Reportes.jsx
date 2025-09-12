@@ -128,7 +128,7 @@ export default function Reportes() {
   const [reportesLoading, setReportesLoading] = useState(false)
   const [reportesError, setReportesError] = useState('')
   const [sucursales, setSucursales] = useState([])
-  const [form, setForm] = useState({ sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', notas_tecnicas:'' })
+  const [form, setForm] = useState({ sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', descripcion:'' })
   const [creating, setCreating] = useState(false)
   const [createMsg, setCreateMsg] = useState({ type:'', text:'' })
   const [detalleReporte, setDetalleReporte] = useState(null)
@@ -316,7 +316,7 @@ export default function Reportes() {
       console.log('Create reporte response:', response);
       
       setCreateMsg({type:'success',text:'Reporte creado'}); 
-      setForm({sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', notas_tecnicas:''}); 
+      setForm({sucursal_id:'', proveedor:'', prioridad:PRIORIDADES.MEDIA, numero_ticket:'', descripcion:''}); 
       
       // Reload reports after creating
       loadReportes();

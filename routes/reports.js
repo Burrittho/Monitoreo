@@ -273,7 +273,7 @@ router.post('/crear-reporte', async (req, res) => {
     if(process.env.NODE_ENV !== 'production'){
       console.log('[REPORTES] Crear reporte payload recibido:', req.body);
     }
-    const { sucursal_id, proveedor, prioridad, numero_ticket } = req.body;
+    const { sucursal_id, proveedor, prioridad, numero_ticket, descripcion } = req.body;
     if(!sucursal_id || !proveedor){
       return res.status(400).json({ success:false, error:'Faltan campos obligatorios sucursal_id o proveedor' })
     }
@@ -287,12 +287,12 @@ router.post('/crear-reporte', async (req, res) => {
     if(pr.proveedor_primario && pr.proveedor_primario.toLowerCase() === proveedorNorm) tipo_internet = 'primario';
     else if(pr.proveedor_secundario && pr.proveedor_secundario.toLowerCase() === proveedorNorm) tipo_internet = 'secundario';
     else tipo_internet = 'otro';
-    // titulo y descripcion deprecados: insertar vacío solo si columnas NOT NULL existen
+    // Usar la descripción del formulario o string vacío si no se proporciona
     const [result] = await pool.execute(`
         INSERT INTO reportes_internet (
             sucursal_id, tipo_internet, proveedor, titulo, descripcion, prioridad, numero_ticket, estado, fecha_reporte, fecha_incidencia
         ) VALUES (?,?,?,?,?,?,?, 'abierto', NOW(), NOW())
-    `, [sucursal_id, tipo_internet, proveedor.trim(), '', '', prioridad, numero_ticket]);
+    `, [sucursal_id, tipo_internet, proveedor.trim(), '', descripcion || '', prioridad, numero_ticket]);
     res.json({ id: result.insertId, message: 'Reporte creado', tipo_internet });
   } catch (error) {
       console.error('Error creando reporte:', error.code, error.sqlMessage, error.sql);
@@ -328,7 +328,7 @@ router.get('/reportes', async (req, res) => {
                 const [reportes] = await pool.execute(`
                         SELECT 
                             ri.id, ri.sucursal_id, ri.tipo_internet, ri.proveedor, ri.prioridad, ri.numero_ticket,
-                            ri.estado,
+                            ri.estado, ri.titulo, ri.descripcion,
                             ri.fecha_reporte, ri.fecha_incidencia, ri.fecha_resolucion,
                             i.name as sucursal_nombre,
                             CASE WHEN ri.tipo_internet='primario' THEN pi.cuenta_primario WHEN ri.tipo_internet='secundario' THEN pi.cuenta_secundario ELSE NULL END AS cuenta
@@ -358,9 +358,11 @@ router.get('/reporte/:id', async (req, res) => {
         const [reporte] = await pool.execute(`
             SELECT 
                 ri.*,
-                i.name as sucursal_nombre
+                i.name as sucursal_nombre,
+                CASE WHEN ri.tipo_internet='primario' THEN pi.cuenta_primario WHEN ri.tipo_internet='secundario' THEN pi.cuenta_secundario ELSE NULL END AS cuenta
             FROM reportes_internet ri
             LEFT JOIN ips i ON ri.sucursal_id = i.id
+            LEFT JOIN proveedores_internet pi ON pi.sucursal_id = ri.sucursal_id
             WHERE ri.id = ?
         `, [id]);
         
@@ -383,7 +385,7 @@ router.put('/reporte/:id', async (req, res) => {
         
         // Campos permitidos para actualizar
         const allowedFields = [
-            'titulo', 'descripcion', 'prioridad', 'estado', 
+            'descripcion', 'prioridad', 'estado', 
             'numero_ticket', 'fecha_resolucion'
         ];
         

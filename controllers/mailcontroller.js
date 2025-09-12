@@ -695,7 +695,7 @@ async function persistHostState(ipId, state, unstableSince, downSince, upSince, 
         state = VALUES(state),
         unstable_since = VALUES(unstable_since),
         down_since = VALUES(down_since),
-        up_since = VALUES(upSince),
+        up_since = VALUES(up_since),
         notify_sent = VALUES(notify_sent),
         updated_at = CURRENT_TIMESTAMP
     `, [

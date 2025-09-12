@@ -5,6 +5,7 @@ const ipsReportRoutes = require('./routes/ips_report'); // Importa las rutas par
 const pingHistoryRoutes = require('./routes/ping_history'); // Importa las rutas para manejar el historial de pings
 const internetRoutes = require('./routes/internet'); // Importa las rutas para manejar internet
 const reportsRoutes = require('./routes/reports'); // Importa las rutas para manejar reportes
+const consoleRoutes = require('./routes/console'); // Importa las rutas para manejar información de consola
 const config = require('./routes/config'); // Importa la configuración
 const {iniciarPingsContinuos} = require('./models/ping'); // Importa la función para iniciar pings
 const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Importa la función para iniciar pings para DVR
@@ -42,7 +43,7 @@ app.use('/api/ips_report', ipsReportRoutes);  // Rutas para manejar reportes de 
 app.use('/api/ping_history', pingHistoryRoutes);  // Rutas para manejar el historial de pings
 app.use('/api/internet', internetRoutes);  // Rutas para manejar información de internet
 app.use('/api/reports', reportsRoutes);  // Rutas para manejar reportes de incidencias
-// app.use('/api/glances', glances);  // (deshabilitado) Rutas para manejar glances
+app.use('/api/console', consoleRoutes);  // Rutas para manejar información de consola
 app.use('/api/config/', config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
 

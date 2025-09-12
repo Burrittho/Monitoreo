@@ -5,6 +5,8 @@ import StatsCards from '../components/analytics/StatsCards'
 import LatencyChart from '../components/analytics/LatencyChart'
 import OutagesList from '../components/analytics/OutagesList'
 import CurrentOutages from '../components/analytics/CurrentOutages'
+import ConsoleInfo from '../components/analytics/ConsoleInfo'
+import ReportsStatus from '../components/analytics/ReportsStatus'
 
 export default function MonitorAnalytics() {
   const analytics = useAnalytics()
@@ -142,49 +144,9 @@ export default function MonitorAnalytics() {
               </dl>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/20 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-desktop text-purple-600 dark:text-purple-400 text-sm"/>
-                </div>
-                <h3 className="font-medium text-gray-900 dark:text-white text-sm">Consola</h3>
-              </div>
-              
-              <dl className="space-y-2">
-                <div className="flex justify-between text-xs">
-                  <dt className="text-gray-500 dark:text-gray-400">Modelo</dt>
-                  <dd className="font-medium text-gray-500 dark:text-gray-400">Pendiente</dd>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <dt className="text-gray-500 dark:text-gray-400">Estado</dt>
-                  <dd className="font-medium text-gray-500 dark:text-gray-400">Desconocido</dd>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <dt className="text-gray-500 dark:text-gray-400">Tiempo activo</dt>
-                  <dd className="font-medium text-gray-500 dark:text-gray-400">Pendiente</dd>
-                </div>
-              </dl>
-            </div>
+            <ConsoleInfo ipId={analytics.ipId} />
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-file-alt text-orange-600 dark:text-orange-400 text-sm"/>
-                </div>
-                <h3 className="font-medium text-gray-900 dark:text-white text-sm">Reportes</h3>
-              </div>
-              
-              <dl className="space-y-2">
-                <div className="flex justify-between text-xs">
-                  <dt className="text-gray-500 dark:text-gray-400">Activos</dt>
-                  <dd className="font-medium text-gray-500 dark:text-gray-400">Pendiente</dd>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <dt className="text-gray-500 dark:text-gray-400">Estado</dt>
-                  <dd className="font-medium text-gray-500 dark:text-gray-400">Desconocido</dd>
-                </div>
-              </dl>
-            </div>
+            <ReportsStatus ipId={analytics.ipId} />
           </div>
         </div>
         

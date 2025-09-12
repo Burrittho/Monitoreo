@@ -8,7 +8,7 @@ export function normalizeReporte(r){
     cuenta: r.cuenta || r.cuenta_proveedor || '',
     prioridad: r.prioridad || 'media',
     numero_ticket: r.numero_ticket || '',
-    notas_tecnicas: r.notas_tecnicas || '',
+    descripcion: r.descripcion || '',
     tipo_internet: r.tipo_internet || r.tipo || '',
     estado: r.estado || 'abierto',
     fecha_incidencia: r.fecha_incidencia || r.fecha || null,
