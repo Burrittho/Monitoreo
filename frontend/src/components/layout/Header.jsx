@@ -1,17 +1,23 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import logoLB from '../../Images/L+B.png';
 
 export default function Header() {
+  const [isDark, setIsDark] = useState(false)
+
   useEffect(() => {
     const saved = localStorage.getItem('theme')
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
     const initial = saved || (prefersDark ? 'dark' : 'light')
-    document.documentElement.classList.toggle('dark', initial === 'dark')
+    const darkMode = initial === 'dark'
+    
+    document.documentElement.classList.toggle('dark', darkMode)
+    setIsDark(darkMode)
   }, [])
 
   function toggleTheme() {
-    const isDark = document.documentElement.classList.toggle('dark')
-    localStorage.setItem('theme', isDark ? 'dark' : 'light')
+    const newDarkMode = document.documentElement.classList.toggle('dark')
+    localStorage.setItem('theme', newDarkMode ? 'dark' : 'light')
+    setIsDark(newDarkMode)
   }
 
   return (
@@ -31,7 +37,7 @@ export default function Header() {
         </div>
         <div className="flex items-center space-x-4">
           <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" onClick={toggleTheme}>
-            <i className="fas fa-moon"></i>
+            <i className={`fas ${isDark ? 'fa-sun' : 'fa-moon'}`}></i>
           </button>
           <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
             <i className="fas fa-cog"></i>

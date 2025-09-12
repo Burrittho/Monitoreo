@@ -1,5 +1,4 @@
 ﻿const express = require('express');
-const routes = require('./routes/redirec'); // Importa las rutas pagina temporal
 const ipsRoutes = require('./routes/ips'); // Importa las rutas para manejar IPs
 const ipsReportRoutes = require('./routes/ips_report'); // Importa las rutas para manejar IPs
 const pingHistoryRoutes = require('./routes/ping_history'); // Importa las rutas para manejar el historial de pings
@@ -12,18 +11,16 @@ const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Impo
 const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); // Importa la función para iniciar pings para servidores
 const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
-const path = require('path'); // path para manejar rutas de archivos
-const fs = require('fs'); // fs para verificar la existencia de archivos
 const pool = require('./config/db'); // Importa la configuración de la base de datos
 
 // Crear una instancia de Express
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware para servir archivos estáticos y parsear JSON
+// Middleware para parsear JSON
 app.use(express.json()); 
 
-// CORS simple para permitir front en otro puerto (React/Vite)
+// CORS para permitir requests desde el frontend (React/Vite en puerto 5173)
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -32,12 +29,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.static(path.join(__dirname, 'public'))); // Usar path.join para mejor compatibilidad
-app.use('/utils', express.static(path.join(__dirname, 'utils'))); // Usar path.join para mejor compatibilidad
 
-
-// Usamos las rutas definidas en para las API routes.js
-app.use('/redirec', routes);  // Rutas para la página de inicio y reporte
+// API Routes - Solo endpoints para el frontend
 app.use('/api/ips', ipsRoutes);  // Rutas para manejar IPs
 app.use('/api/ips_report', ipsReportRoutes);  // Rutas para manejar reportes de IPs
 app.use('/api/ping_history', pingHistoryRoutes);  // Rutas para manejar el historial de pings
@@ -47,53 +40,23 @@ app.use('/api/console', consoleRoutes);  // Rutas para manejar información de c
 app.use('/api/config/', config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
 
-// Ruta principal 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'views', 'monitor.html'));
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Ruta para manejar archivos HTML en la carpeta views
-app.get('/:page', (req, res, next) => {
-    const requestedPage = req.params.page;
-    
-    // Asegurarse de que estamos tratando con un archivo HTML
-    if (requestedPage.endsWith('.html')) {
-        const filePath = path.join(__dirname, 'public', 'views', requestedPage);
-        
-        // Comprobar si el archivo existe
-        fs.access(filePath, fs.constants.F_OK, (err) => {
-            if (err) {
-                // Si el archivo no existe, continuamos con el siguiente middleware
-                return next();
-            }
-            
-            // Si el archivo existe, lo enviamos
-            res.sendFile(filePath);
-        });
-    } else {
-        // Si no es un archivo HTML, continuamos con el siguiente middleware
-        next();
-    }
-});
-
-// Middleware de manejo de errores general (debe ir después de las rutas)
+// Middleware de manejo de errores
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ 
-        error: 'Error interno del servidor o', 
-        404: 'Recurso no encontrado',
+        error: 'Error interno del servidor',
         message: err.message 
     });
 });
 
-// Middleware para manejar rutas no encontradas
+// Middleware para rutas no encontradas - Solo respuestas JSON
 app.use((req, res) => {
-    // Verificar si la solicitud es para un archivo HTML
-    if (req.path.endsWith('.html')) {
-        res.status(404).sendFile(path.join(__dirname, 'public', 'views', '404.html'));
-    } else {
-        res.status(404).json({ error: 'Recurso no encontrado' });
-    }
+    res.status(404).json({ error: 'Endpoint no encontrado' });
 });
 
 //  Iniciar el sistema de monitoreo N+1 (reemplaza al sistema antiguo)
