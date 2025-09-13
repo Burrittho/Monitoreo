@@ -155,18 +155,34 @@ async function getLastSuccessfulPing(ipId, beforeTime) {
     const [rows] = await connectionManager.executeQuery(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
        CASE WHEN latency IS NOT NULL THEN latency ELSE 0 END as latency
-       FROM ping_logs WHERE ip_id = ? AND success = 1 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
+       FROM ping_logs 
+       WHERE ip_id = ? AND success = 1 AND fecha < ? 
+       ORDER BY fecha DESC LIMIT 1`,
       [ipId, new Date(beforeTime)],
-      'ping_queries'
+      'queries'
     );
     
     if (rows.length > 0) {
-      return rows[0];
+      return {
+        fecha: rows[0].fecha,
+        timestamp: rows[0].timestamp,
+        latency: rows[0].latency
+      };
     }
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 0 };
+    
+    // Si no encuentra ningún ping exitoso previo, usar el tiempo de referencia
+    return { 
+      fecha: new Date(beforeTime), 
+      timestamp: beforeTime, 
+      latency: 0 
+    };
   } catch (error) {
     console.error(`Error obteniendo último ping exitoso para IP ${ipId}:`, error.message);
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 0 };
+    return { 
+      fecha: new Date(beforeTime), 
+      timestamp: beforeTime, 
+      latency: 0 
+    };
   }
 }
 
@@ -174,19 +190,35 @@ async function getLastFailedPing(ipId, beforeTime) {
   try {
     const [rows] = await connectionManager.executeQuery(
       `SELECT fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp, 
-       CASE WHEN latency IS NOT NULL THEN latency ELSE 'timeout' END as latency
-       FROM ping_logs WHERE ip_id = ? AND success = 0 AND fecha < ? ORDER BY fecha DESC LIMIT 1`,
+       CASE WHEN latency IS NOT NULL THEN latency ELSE 0 END as latency
+       FROM ping_logs 
+       WHERE ip_id = ? AND success = 0 AND fecha < ? 
+       ORDER BY fecha DESC LIMIT 1`,
       [ipId, new Date(beforeTime)],
-      'ping_queries'
+      'queries'
     );
     
     if (rows.length > 0) {
-      return rows[0];
+      return {
+        fecha: rows[0].fecha,
+        timestamp: rows[0].timestamp,
+        latency: 'timeout'
+      };
     }
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 'timeout' };
+    
+    // Si no encuentra ningún ping fallido previo, usar el tiempo de referencia
+    return { 
+      fecha: new Date(beforeTime), 
+      timestamp: beforeTime, 
+      latency: 'timeout' 
+    };
   } catch (error) {
     console.error(`Error obteniendo último ping fallido para IP ${ipId}:`, error.message);
-    return { fecha: new Date(beforeTime), timestamp: beforeTime, latency: 'timeout' };
+    return { 
+      fecha: new Date(beforeTime), 
+      timestamp: beforeTime, 
+      latency: 'timeout' 
+    };
   }
 }
 
@@ -803,16 +835,18 @@ async function startWorker(poolConnection) {
 }
 
 async function evaluateWindowState(ipId, now) {
-  const windowMinutes = SEQUENCE_WINDOW_MINUTES + 1;
+  // A + 1 minutos de ventana (6 minutos si A=5)
+  const windowMinutes = SEQUENCE_WINDOW_MINUTES + 1; // 6 minutos
   const windowStart = new Date(now - windowMinutes * 60 * 1000);
   
   try {
     const [logs] = await connectionManager.executeQuery(
       'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? AND fecha >= ? ORDER BY fecha ASC',
       [ipId, windowStart],
-      'window_evaluation'
+      'queries' // ← Usando tipo consolidado
     );
     
+    // Agrupar por minuto y determinar estado de cada minuto
     const minutesMap = new Map();
     logs.forEach(log => {
       const minuteKey = Math.floor(log.timestamp / 60000);
@@ -820,35 +854,74 @@ async function evaluateWindowState(ipId, now) {
       minutesMap.get(minuteKey).push(log.success);
     });
     
+    // Evaluar cada minuto: debe ser consistente (todos OK o todos FAIL)
     const minuteStates = [];
-    for (const [minute, arr] of minutesMap.entries()) {
-      if (arr.every(s => s === 1)) minuteStates.push({ minute, state: 'OK' });
-      else if (arr.every(s => s === 0)) minuteStates.push({ minute, state: 'FAIL' });
-      else minuteStates.push({ minute, state: 'MIX' });
+    for (const [minute, pings] of minutesMap.entries()) {
+      // Un minuto es OK solo si TODOS los pings son exitosos
+      if (pings.length > 0 && pings.every(s => s === 1)) {
+        minuteStates.push({ minute, state: 'OK' });
+      }
+      // Un minuto es FAIL solo si TODOS los pings fallan  
+      else if (pings.length > 0 && pings.every(s => s === 0)) {
+        minuteStates.push({ minute, state: 'FAIL' });
+      }
+      // Si hay mezcla de éxitos y fallos, el minuto no cuenta para ningún estado
+      else {
+        minuteStates.push({ minute, state: 'MIX' });
+      }
     }
     
+    // Ordenar por tiempo
     minuteStates.sort((a, b) => a.minute - b.minute);
     
-    let blockOK = null, blockFAIL = null;
+    // Buscar bloques consecutivos de B minutos (5 minutos)
+    let confirmedState = null;
+    let referenceTimestamp = null;
+    
+    // Buscar bloque de B minutos consecutivos OK
     for (let i = 0; i <= minuteStates.length - CONSECUTIVE_MINUTES_REQUIRED; i++) {
-      const okBlock = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
-      if (okBlock.every(m => m.state === 'OK')) blockOK = okBlock;
-      const failBlock = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
-      if (failBlock.every(m => m.state === 'FAIL')) blockFAIL = failBlock;
-      if (blockOK || blockFAIL) break;
+      const block = minuteStates.slice(i, i + CONSECUTIVE_MINUTES_REQUIRED);
+      
+      // Verificar si tenemos B minutos consecutivos OK
+      if (block.every(m => m.state === 'OK')) {
+        confirmedState = STATE_UP;
+        
+        // Buscar último ping fallido ANTES de este bloque de éxito
+        const blockStartTime = block[0].minute * 60000;
+        const lastFailed = await getLastFailedPing(ipId, blockStartTime);
+        referenceTimestamp = lastFailed;
+        break;
+      }
+      
+      // Verificar si tenemos B minutos consecutivos FAIL  
+      if (block.every(m => m.state === 'FAIL')) {
+        confirmedState = STATE_DOWN;
+        
+        // Buscar último ping exitoso ANTES de este bloque de fallos
+        const blockStartTime = block[0].minute * 60000;
+        const lastSuccess = await getLastSuccessfulPing(ipId, blockStartTime);
+        referenceTimestamp = lastSuccess;
+        break;
+      }
     }
     
-    if (blockOK) {
-      const firstBlockMinute = blockOK[0].minute * 60000;
-      const lastFailed = await getLastFailedPing(ipId, firstBlockMinute);
-      return { state: STATE_UP, lastFailed };
-    } else if (blockFAIL) {
-      const firstBlockMinute = blockFAIL[0].minute * 60000;
-      const lastSuccess = await getLastSuccessfulPing(ipId, firstBlockMinute);
-      return { state: STATE_DOWN, lastSuccess };
-    } else {
-      return { state: STATE_UNSTABLE };
+    if (confirmedState) {
+      return { 
+        state: confirmedState, 
+        referenceTimestamp: referenceTimestamp,
+        // Para debugging
+        windowData: {
+          totalMinutes: minuteStates.length,
+          okMinutes: minuteStates.filter(m => m.state === 'OK').length,
+          failMinutes: minuteStates.filter(m => m.state === 'FAIL').length,
+          mixMinutes: minuteStates.filter(m => m.state === 'MIX').length
+        }
+      };
     }
+    
+    // Si no hay bloques consecutivos suficientes, mantener estado actual o UNSTABLE
+    return { state: STATE_UNSTABLE };
+    
   } catch (error) {
     console.error(`Error evaluando estado de ventana para IP ${ipId}:`, error.message);
     return { state: STATE_UNSTABLE };
@@ -860,19 +933,20 @@ async function checkHost({ id: ipId, ip, name }) {
     const [[lastLog]] = await connectionManager.executeQuery(
       'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? ORDER BY fecha DESC LIMIT 1',
       [ipId],
-      'host_checking'
+      'queries'
     );
     
     if (!lastLog) return;
 
     const now = lastLog.timestamp;
     
+    // Inicializar estado si no existe
     if (!hostsStatus[ipId]) {
       try {
         const [[row]] = await connectionManager.executeQuery(
           'SELECT * FROM host_state WHERE ip_id = ?',
           [ipId],
-          'state_management'
+          'state'
         );
         
         if (row) {
@@ -902,7 +976,7 @@ async function checkHost({ id: ipId, ip, name }) {
           await connectionManager.executeQuery(
             `INSERT INTO host_state (ip_id, state, up_since) VALUES (?, ?, NOW())`,
             [ipId, STATE_UP],
-            'state_management'
+            'state'
           );
         }
       } catch (error) {
@@ -926,6 +1000,15 @@ async function checkHost({ id: ipId, ip, name }) {
             notifySent: false
           };
           changed = true;
+          
+          // Log con información detallada
+          if (config.debug_logging) {
+            console.log(`${name} (${ip}) → UP. Ventana: ${JSON.stringify(evalResult.windowData)}`);
+            if (evalResult.referenceTimestamp) {
+              console.log(`  Último DOWN: ${formatDate(new Date(evalResult.referenceTimestamp.timestamp))}`);
+            }
+          }
+          
           await logStateTransition(ipId, hostsStatus[ipId].state, STATE_UP, evalResult);
           
           try {
@@ -943,7 +1026,8 @@ async function checkHost({ id: ipId, ip, name }) {
             const incidentInfo = {
               confirmacionCaida: currentState.originalDownTime ? formatDate(new Date(currentState.originalDownTime)) : 'No disponible',
               confirmacionRecuperacion: formatDate(new Date(now)),
-              tiempoSinSistema: tiempoSinSistema
+              tiempoSinSistema: tiempoSinSistema,
+              ultimoFallo: evalResult.referenceTimestamp ? formatDate(new Date(evalResult.referenceTimestamp.timestamp)) : 'No disponible'
             };
             
             const emailData = await generateEmailHTML('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
@@ -951,9 +1035,12 @@ async function checkHost({ id: ipId, ip, name }) {
             
           } catch (emailError) {
             console.error('Error generando correo de recuperación:', emailError);
+            const lastDownRef = evalResult.referenceTimestamp ? 
+              formatDate(new Date(evalResult.referenceTimestamp.timestamp)) : 'No disponible';
+            
             await sendMonitoringEmail(
               `RECUPERADO: ${name} - Sistema Restablecido`,
-              `<p>Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
+              `<p>Sistema restablecido: ${name} (${ip}) a las ${formatDate(new Date(now))}<br>Último DOWN: ${lastDownRef}</p>`
             );
           }
         }
@@ -971,6 +1058,15 @@ async function checkHost({ id: ipId, ip, name }) {
             originalDownTime: now
           };
           changed = true;
+          
+          // Log con información detallada
+          if (config.debug_logging) {
+            console.log(`${name} (${ip}) → DOWN. Ventana: ${JSON.stringify(evalResult.windowData)}`);
+            if (evalResult.referenceTimestamp) {
+              console.log(`  Último UP: ${formatDate(new Date(evalResult.referenceTimestamp.timestamp))}`);
+            }
+          }
+          
           await logStateTransition(ipId, hostsStatus[ipId].state, STATE_DOWN, evalResult);
           
           try {
@@ -981,7 +1077,8 @@ async function checkHost({ id: ipId, ip, name }) {
             const incidentInfo = {
               confirmacionCaida: formatDate(new Date(now)),
               confirmacionRecuperacion: null,
-              tiempoSinSistema: null
+              tiempoSinSistema: null,
+              ultimoExito: evalResult.referenceTimestamp ? formatDate(new Date(evalResult.referenceTimestamp.timestamp)) : 'No disponible'
             };
             
             const emailData = await generateEmailHTML('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
@@ -989,9 +1086,12 @@ async function checkHost({ id: ipId, ip, name }) {
             
           } catch (emailError) {
             console.error('Error generando correo de caída:', emailError);
+            const lastUpRef = evalResult.referenceTimestamp ? 
+              formatDate(new Date(evalResult.referenceTimestamp.timestamp)) : 'No disponible';
+            
             await sendMonitoringEmail(
               `ALERTA: ${name} - Sistema Caído`,
-              `<p>Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}</p>`
+              `<p>Sistema caído: ${name} (${ip}) a las ${formatDate(new Date(now))}<br>Último UP: ${lastUpRef}</p>`
             );
           }
         }
@@ -1000,12 +1100,7 @@ async function checkHost({ id: ipId, ip, name }) {
     
     if (changed) {
       hostsStatus[ipId] = newState;
-      console.log(`Estado actual de ${name} (${ip}):`);
-      console.log(`  - Estado: ${newState.state}`);
-      console.log(`  - Inestabilidad: ${newState.unstableSince ? formatDate(new Date(newState.unstableSince)) : 'NULL'}`);
-      console.log(`  - Caída: ${newState.downSince ? formatDate(new Date(newState.downSince)) : 'NULL'}`);
-      console.log(`  - Recuperación: ${newState.upSince ? formatDate(newState.upSince ? new Date(newState.upSince) : null) : 'NULL'}`);
-      console.log(`  - Notificación: ${newState.notifySent || 'NULL'}`);
+      console.log(`Estado actual de ${name} (${ip}): ${newState.state}`);
       
       await persistHostState(
         ipId,

@@ -20,7 +20,7 @@ async function hacerPing(ips) {
     return new Promise((resolve, reject) => {
         if (!ips.length) return resolve([]);
 
-        // Preparamos el comando WSL con fping (¡la magia está aquí!)
+        // Preparamos el comando con fping (¡la magia está aquí!)
         const comando = `fping -c1 -t1500 ${ips.join(' ')}`;
 
         exec(comando, (error, stdout, stderr) => {
