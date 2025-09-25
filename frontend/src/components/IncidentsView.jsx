@@ -4,6 +4,7 @@ import { apiGet } from '../lib/api'
 export default function IncidentsView({ branchResults, dvrResults, serverResults }) {
   const [activeReports, setActiveReports] = useState(0)
   const [activeReportsData, setActiveReportsData] = useState([])
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Cargar reportes activos de internet
   useEffect(() => {
@@ -25,6 +26,29 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
     const interval = setInterval(fetchActiveReports, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  // Manejar pantalla completa
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  // Manejar Escape para salir del fullscreen
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false)
+      }
+    }
+
+    if (isFullscreen) {
+      document.addEventListener('keydown', handleEscape)
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isFullscreen])
+
   // Obtener todas las incidencias y reportes combinados
   const getAllIncidentsAndReports = () => {
     const items = []
@@ -221,24 +245,66 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
 
   if (allItems.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i className="fas fa-check-circle text-2xl text-green-600 dark:text-green-400"/>
+      <div className={`space-y-6 ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-100 dark:bg-gray-900 overflow-y-auto p-6' : ''}`}>
+        {/* Header con botón de fullscreen */}
+        <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex items-center gap-3">
+            <i className="fas fa-check-circle text-green-500 text-xl"/>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Dashboard de Incidencias
+            </h1>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-            Todo Funcionando Correctamente
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            No hay incidencias activas ni reportes pendientes
-          </p>
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+            title={isFullscreen ? 'Salir de pantalla completa (ESC)' : 'Pantalla completa'}
+          >
+            <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}/>
+            <span className="text-sm font-medium">
+              {isFullscreen ? 'Salir' : 'Pantalla completa'}
+            </span>
+          </button>
+        </div>
+        
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i className="fas fa-check-circle text-2xl text-green-600 dark:text-green-400"/>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Todo Funcionando Correctamente
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              No hay incidencias activas ni reportes pendientes
+            </p>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-100 dark:bg-gray-900 overflow-y-auto p-6' : ''}`}>
+      {/* Header con botón de fullscreen */}
+      <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
+        <div className="flex items-center gap-3">
+          <i className="fas fa-exclamation-triangle text-orange-500 text-xl"/>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Dashboard de Incidencias
+          </h1>
+        </div>
+        <button
+          onClick={toggleFullscreen}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+          title={isFullscreen ? 'Salir de pantalla completa (ESC)' : 'Pantalla completa'}
+        >
+          <i className={`fas ${isFullscreen ? 'fa-compress' : 'fa-expand'}`}/>
+          <span className="text-sm font-medium">
+            {isFullscreen ? 'Salir' : 'Pantalla completa'}
+          </span>
+        </button>
+      </div>
+
       {/* Métricas de incidencias */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
@@ -293,154 +359,244 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
         </div>
       </div>
 
-      {/* Lista de incidencias y reportes */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-        <div className="p-6 border-b border-gray-200 dark:border-gray-600">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Incidencias y Reportes Activos
-            </h2>
-            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                <span>Crítico</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                <span>Advertencia</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span>Informativo</span>
+      {/* Lista de incidencias y reportes categorizadas */}
+      <div className="space-y-6">
+        {/* Incidencias Críticas */}
+        {allItems.filter(item => item.severity === 'critical').length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800">
+            <div className="p-6 border-b border-red-200 dark:border-red-600 bg-red-50 dark:bg-red-900/20">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-red-900 dark:text-red-100">
+                  <i className="fas fa-times-circle mr-2 text-red-600 dark:text-red-400"/>
+                  Incidencias Críticas
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
+                  <span>{allItems.filter(item => item.severity === 'critical').length} críticas</span>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-        
-        <div className="max-h-96 overflow-y-auto">
-          <div className="divide-y divide-gray-200 dark:divide-gray-600">
-            {allItems.map((item, index) => {
-              const severityConfig = getSeverityConfig(item.severity)
-              
-              return (
-                <div key={`${item.ip || item.reportId}-${index}`} 
-                     className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all duration-200 ${
-                       item.category === 'report' ? 'border-l-4 border-l-blue-400' : ''
-                     }`}>
-                  <div className="flex items-start gap-4">
-                    {/* Icono del estado */}
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${severityConfig.bg}`}>
-                      <i className={`${getTypeIcon(item.type)} ${severityConfig.color}`}/>
-                    </div>
-                    
-                    {/* Contenido principal */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-medium text-gray-900 dark:text-white truncate">
-                          {item.name}
-                        </h3>
-                        
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${severityConfig.badge}`}>
-                          {severityConfig.label}
-                        </span>
-                        
-                        <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+            
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 p-6">
+              {allItems.filter(item => item.severity === 'critical').map((item, index) => {
+                const severityConfig = getSeverityConfig(item.severity)
+                const latencyDisplay = item.category === 'incident' 
+                  ? (item.latency ? `${item.latency} ms` : 'Host no alcanzable')
+                  : 'Sin conexión'
+                
+                return (
+                  <div key={`critical-${item.ip || item.reportId}-${index}`} 
+                       className="min-w-[140px] sm:min-w-[160px] rounded-xl p-4 shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 border-2 bg-red-500 border-red-400 cursor-pointer">
+                    <div className="flex flex-col items-center p-2 rounded-lg">
+                      <div className="flex items-center gap-1 mb-2 w-full justify-center">
+                        <i className={`${getTypeIcon(item.type)} text-white text-xs`}/>
+                        <span className="px-2 py-1 bg-red-400 text-white rounded-full text-[10px] font-medium">
                           {getTypeLabel(item.type)}
                         </span>
                       </div>
                       
-                      {/* Descripción del problema */}
-                      <div className="space-y-1 mb-2">
-                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                          {item.issue}
-                          {item.latency && item.category === 'incident' && (
-                            <span className="ml-2 font-mono text-xs text-gray-500 dark:text-gray-400">
-                              Latencia: {item.latency}ms
+                      <h5 className="text-xs sm:text-sm font-bold text-white tracking-tight overflow-hidden text-ellipsis whitespace-nowrap w-full text-center mb-2" title={item.name}>
+                        {item.name}
+                      </h5>
+                    </div>
+                      <p className="font-bold text-[10px] sm:text-xs text-white text-center break-words max-w-full">
+                        {latencyDisplay}
+                      </p>
+                    </div>
+
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Advertencias */}
+        {allItems.filter(item => item.severity === 'warning').length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-yellow-200 dark:border-yellow-800">
+            <div className="p-6 border-b border-yellow-200 dark:border-yellow-600 bg-yellow-50 dark:bg-yellow-900/20">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100">
+                  <i className="fas fa-exclamation-triangle mr-2 text-yellow-600 dark:text-yellow-400"/>
+                  Advertencias
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300">
+                  <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                  <span>{allItems.filter(item => item.severity === 'warning').length} advertencias</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 p-6">
+              {allItems.filter(item => item.severity === 'warning').map((item, index) => {
+                const severityConfig = getSeverityConfig(item.severity)
+                const latencyDisplay = item.category === 'incident' 
+                  ? (item.latency ? `${item.latency} ms` : 'Host no alcanzable')
+                  : 'Latencia alta'
+                
+                return (
+                  <div key={`warning-${item.ip || item.reportId}-${index}`} 
+                       className="min-w-[140px] sm:min-w-[160px] rounded-xl p-4 shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 border-2 bg-yellow-500 border-yellow-400 cursor-pointer">
+                    <div className="flex flex-col items-center p-2 rounded-lg">
+                      <div className="flex items-center gap-1 mb-2 w-full justify-center">
+                        <i className={`${getTypeIcon(item.type)} text-white text-xs`}/>
+                        <span className="px-2 py-1 bg-yellow-400 text-white rounded-full text-[10px] font-medium">
+                          {getTypeLabel(item.type)}
+                        </span>
+                      </div>
+                      
+                      <h5 className="text-xs sm:text-sm font-bold text-white tracking-tight overflow-hidden text-ellipsis whitespace-nowrap w-full text-center mb-2" title={item.name}>
+                        {item.name}
+                      </h5>
+                      
+                      <div className="flex items-center my-2 justify-center w-full">
+                        <div className="relative mr-2">
+                          <div className="w-3 h-3 rounded-full bg-yellow-600" style={{ boxShadow: '0 0 8px 2px #d4ad38ff' }} />
+                        </div>
+                        <span className="text-[10px] sm:text-xs font-semibold px-2.5 py-0.5 rounded-full bg-yellow-600 text-white border border-white/70">
+                          Lento
+                        </span>
+                      </div>
+                      
+                      <p className="font-bold text-[10px] sm:text-xs text-white text-center break-words max-w-full">
+                        {latencyDisplay}
+                      </p>
+                      
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Reportes Informativos */}
+        {allItems.filter(item => item.severity === 'info').length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-blue-200 dark:border-blue-800">
+            <div className="p-6 border-b border-blue-200 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                  <i className="fas fa-info-circle mr-2 text-blue-600 dark:text-blue-400"/>
+                  Reportes Informativos
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>{allItems.filter(item => item.severity === 'info').length} reportes activos</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 p-6">
+              {allItems.filter(item => item.severity === 'info').map((item, index) => {
+                const priorityColor = {
+                  'alta': 'bg-red-500 text-white',
+                  'media': 'bg-yellow-500 text-white',
+                  'baja': 'bg-green-500 text-white'
+                }[item.prioridad] || 'bg-gray-500 text-white'
+                
+                return (
+                  <div key={`info-${item.reportId || index}`} 
+                       className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/30 border border-blue-200 dark:border-blue-700/50 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer overflow-hidden">
+                    
+                    {/* Header con icono y estado */}
+                    <div className="blue-600 to-indigo-600 p-4 text-white relative overflow-hidden">
+                      <div className="relative z-10 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-end">
+                            <h3 className="font-semibold text-lg text-white truncate max-w-[200px]" title={item.name}>{item.name}
+                              </h3>
+                          </div>
+                          <div>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${priorityColor}`}>
+                              {item.prioridad}
                             </span>
-                          )}
-                        </p>
-                        
-                        {/* Información específica para reportes informativos */}
-                        {item.category === 'report' && (
-                          <div className="space-y-1">
-                            {/* Nombre ya está arriba */}
-                            <p className="text-xs text-gray-700 dark:text-gray-200 font-semibold">
-                              {item.textoInternet}
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400">
-                              <span className="font-medium">Proveedor:</span> {item.proveedor}
-                            </p>
-                            {item.cuenta && (
-                              <p className="text-xs text-gray-600 dark:text-gray-400">
-                                <span className="font-medium">Cuenta:</span> {item.cuenta}
-                              </p>
-                            )}
-                            {item.numeroTicket !== 'No asignado' && (
-                              <p className="text-xs text-gray-600 dark:text-gray-400">
-                                <span className="font-medium">Reporte:</span> {item.numeroTicket}
-                              </p>
-                            )}
-                            <p className="text-xs text-blue-600 dark:text-blue-400">
-                              <span className="font-medium">Usuario:</span> {item.usuario}
-                            </p>
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-300">
-                                <span className="font-medium">Fecha de reporte:</span> {formatTimestamp(item.fechaReporte)}
-                              </span>
-                              <span className="text-xs text-blue-700 dark:text-blue-300 font-medium capitalize">
-                                Prioridad: {item.prioridad}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contenido principal */}
+                    <div className="p-3 space-y-4">
+
+                      {/* Información del reporte */}
+                      {item.numeroTicket !== 'No asignado' && (
+                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-lg p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                Número de reporte:
                               </span>
                             </div>
+                            <span className=" text-white px-3 py-1 rounded-full text-s font-mono">
+                              #{item.numeroTicket}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                      {/* Información del proveedor */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-gray-50 dark:bg-gray-800/30 rounded-lg p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-medium text-center text-gray-500 dark:text-gray-400 uppercase tracking-wide">Proveedor:</span>
+                          </div>
+                          <p className="text-gray-900 dark:text-white font-medium text-sm text-center">
+                            {item.proveedor}
+                          </p>
+                        </div>
+
+                        {item.cuenta && (
+                          <div className="bg-gray-50 dark:bg-gray-800/30 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-medium text-center text-gray-500 dark:text-gray-400 uppercase tracking-wide">Cuenta</span>
+                            </div>
+                            <p className="text-gray-900 dark:text-white font-medium text-sm text-center">
+                              {item.cuenta}
+                            </p>
                           </div>
                         )}
                       </div>
-                      
-                      {/* Información adicional */}
-                      {item.category !== 'report' && (
-                        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                          <i className="fas fa-network-wired w-3"></i>
-                          <span>{item.ip}</span>
+
+                      {/* Descripción del problema */}
+                      <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4 border border-blue-100 dark:border-blue-800/30">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                            <i className="fas fa-exclamation text-orange-600 dark:text-orange-400 text-sm"/>
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-1">Descripción del Problema</h4>
+                            <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+                              {item.textoInternet}
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    
-                    {/* Indicador de estado */}
-                    <div className="flex flex-col items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${severityConfig.pulse}`}></div>
-                      {item.category === 'incident' && item.severity === 'critical' && (
-                        <div className="text-xs text-red-600 dark:text-red-400 font-medium">
-                          OFFLINE
+                      </div>
+
+                    {/* Footer con información adicional */}
+                    <div className="bg-gray-50 dark:bg-gray-800/30 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <i className="fas fa-user text-gray-500 dark:text-gray-400 text-xs"/>
+                            <span className="text-xs text-left text-gray-600 dark:text-gray-400">
+                              {item.usuario}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <i className="fas fa-clock text-gray-500 dark:text-gray-400 text-xs"/>
+                            <span className="text-xs text-right text-gray-600 dark:text-gray-400">
+                              {formatTimestamp(item.fechaReporte)}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                      {item.category === 'incident' && item.severity === 'warning' && (
-                        <div className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
-                          SLOW
-                        </div>
-                      )}
-                      {item.category === 'report' && (
-                        <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                          ACTIVE
-                        </div>
-                      )}
+
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        
-        {/* Footer con resumen */}
-        <div className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-600">
-          <div className="flex items-center justify-between text-sm">
-            <div className="text-gray-600 dark:text-gray-400">
-              Mostrando {allItems.length} elementos activos
-            </div>
-            <div className="text-gray-500 dark:text-gray-400">
-              Última actualización: {new Date().toLocaleTimeString('es-MX')}
+                )
+              })}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

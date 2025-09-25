@@ -11,7 +11,7 @@ export default function DvrCard({ result }) {
     : 'bg-red-500'
 
   const statusText = status === 'online' ? 'Online' : status === 'warning' ? 'Lento' : 'Offline'
-  const statusColor = status === 'online' ? '#22C55E' : status === 'warning' ? '#EAB308' : '#EF4444'
+  const statusColor = status === 'online' ? '#37b967ff' : status === 'warning' ? '#d4ad38ff' : '#c73b3bff'
   const href = `http://${result.ip}`
 
   return (

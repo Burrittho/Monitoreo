@@ -23,6 +23,7 @@ async function hacerPing(ips) {
 
         // comando con fping (¡la magia está aquí!)
         const comando = `fping -c1 -t1500 ${ips.join(' ')}`;
+        //const comando = `wsl fping -c1 -t1500 ${ips.join(' ')}`;
 
         exec(comando, (error, stdout, stderr) => {
             const output = stderr || stdout;
