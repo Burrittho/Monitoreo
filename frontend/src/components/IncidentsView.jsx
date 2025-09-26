@@ -142,6 +142,7 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
         severity: 'info',
         name: report.sucursal_nombre || report.sucursal || 'Sucursal desconocida',
         textoInternet: report.texto_internet || 'Reporte de internet',
+        descripcion: report.descripcion || '',
         proveedor: report.proveedor || 'Proveedor no especificado',
         cuenta: report.cuenta || report.cuenta_proveedor || '',
         numeroTicket: report.numero_ticket || 'No asignado',
@@ -514,7 +515,7 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
                     </div>
 
                     {/* Contenido principal */}
-                    <div className="p-3 space-y-4">
+                    <div className="p-2 space-y-3">
 
                       {/* Información del reporte */}
                       {item.numeroTicket !== 'No asignado' && (
@@ -559,14 +560,21 @@ export default function IncidentsView({ branchResults, dvrResults, serverResults
                       {/* Descripción del problema */}
                       <div className="bg-white dark:bg-gray-800/50 rounded-lg p-4 border border-blue-100 dark:border-blue-800/30">
                         <div className="flex items-start gap-3">
-                          <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                          <div className="flex flex-shrink-0 items-center justify-center w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full mt-1">
                             <i className="fas fa-exclamation text-orange-600 dark:text-orange-400 text-sm"/>
                           </div>
                           <div className="flex-1">
-                            <h4 className="font-medium text-gray-900 dark:text-white text-sm mb-1">Descripción del Problema</h4>
-                            <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
-                              {item.textoInternet}
-                            </p>
+                            {item.descripcion && (
+                              <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
+                                  Descripción del reporte:
+                                </h3>
+                              </div>
+                            )}
+                            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                              <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-3">{item.descripcion}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
