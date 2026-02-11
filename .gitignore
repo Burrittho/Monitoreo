@@ -4,6 +4,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
+node_modules/
+create_nsclient_table.sql
 
 # Environment variables
 .env
@@ -12,7 +14,10 @@ package-lock.json
 .env.test
 
 #Documentos
-Docs/
+docs/
+scripts/
+sql/
+test/
 
 # Build outputs
 dist/
@@ -77,3 +82,4 @@ temp/
 frontend/dist/
 frontend/build/
 frontend/.vite/
+

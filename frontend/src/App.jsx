@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Monitor from './pages/Monitor.jsx'
 import Reportes from './pages/Reportes.jsx'
 import MonitorAnalytics from './pages/MonitorAnalytics.jsx'
+import MonitorServers from './pages/MonitorServers.jsx'
+import ServerMonitor from './pages/ServerMonitor.jsx'
 import Layout from './components/layout/Layout.jsx'
 
 export default function App() {
@@ -14,6 +16,8 @@ export default function App() {
           <Route path="/monitor" element={<Monitor />} />
           <Route path="/monitor/analytics" element={<MonitorAnalytics />} />
           <Route path="/reportes" element={<Reportes />} />
+          <Route path="/servers" element={<MonitorServers />} />
+          <Route path="/servers/:hostname" element={<ServerMonitor />} />
         </Routes>
       </Layout>
     </BrowserRouter>

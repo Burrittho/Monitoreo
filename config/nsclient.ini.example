@@ -1,0 +1,160 @@
+; ============================================
+; Configuración de NSClient++ para integración con NRDP
+; Archivo: C:\Program Files\NSClient++\nsclient.ini
+; ============================================
+
+[/modules]
+CheckSystem = enabled
+CheckDisk = enabled
+CheckExternalScripts = enabled
+CheckHelpers = enabled
+Scheduler = enabled
+NRDPClient = enabled
+
+; ============================================
+; CONFIGURACIÓN DEL CLIENTE NRDP
+; ============================================
+[/settings/NRDP/client]
+hostname = auto
+channel = nrdp
+
+; ============================================
+; SERVIDOR NRDP DE DESTINO
+; ============================================
+[/settings/NRDP/client/targets/default]
+address = http://172.22.19.244:3000/api/nrdp
+token = P@$$w0rd.@
+encryption = none
+retries = 3
+timeout = 30
+
+; ============================================
+; PROGRAMACIÓN DE CHECKS
+; ============================================
+
+; ===== MÉTRICAS DE SISTEMA =====
+
+; CPU con métricas detalladas (5 minutos, 1 minuto, 5 segundos)
+[/settings/scheduler/schedules/cpu]
+interval = 30s
+channel = nrdp
+command = check_cpu "warn=load > 80" "crit=load > 90" time=1m "top-syntax=${status}: CPU ${list}" "detail-syntax=${time}: ${load}%" "perf-syntax=cpu_${time}"
+
+; Memoria RAM con porcentajes y valores absolutos
+[/settings/scheduler/schedules/memory]
+interval = 30s
+channel = nrdp
+command = check_memory "warn=used > 80%" "crit=used > 90%" "top-syntax=${status}: ${list}" "detail-syntax=${type} used: ${used}/${size} (${used_pct}%)" "perf-syntax=${type}" type=physical type=committed
+
+; Disco C: con porcentaje usado
+[/settings/scheduler/schedules/disk_c]
+interval = 60s
+channel = nrdp
+command = check_drivesize "drive=C:" "warn=used_pct > 80" "crit=used_pct > 90" "top-syntax=${status}: ${list}" "detail-syntax=${drive}: ${used}/${size} used (${used_pct}%)" "perf-syntax=${drive}" "perf-config=*(unit:G)"
+
+; Disco D: (comentar si no existe)
+[/settings/scheduler/schedules/disk_d]
+interval = 60s
+channel = nrdp
+command = check_drivesize "drive=D:" "warn=used_pct > 80" "crit=used_pct > 90" "top-syntax=${status}: ${list}" "detail-syntax=${drive}: ${used}/${size} used (${used_pct}%)" "perf-syntax=${drive}" "perf-config=*(unit:G)"
+
+; ===== INFORMACIÓN DEL SISTEMA =====
+
+; Sistema Operativo (ejecutar una vez al inicio o cada hora)
+[/settings/scheduler/schedules/os_version]
+interval = 3600s
+channel = nrdp
+command = check_os_version "top-syntax=${status}: ${list}" "detail-syntax=OS: ${version} (Build ${build})"
+
+; Uptime y fecha de arranque
+[/settings/scheduler/schedules/uptime]
+interval = 300s
+channel = nrdp
+command = check_uptime "detail-syntax=Uptime: ${uptime}h, Boot: ${boot}" "perf-syntax=uptime"
+
+; ===== RED Y CONECTIVIDAD =====
+
+; Tráfico de red (bytes enviados/recibidos por segundo)
+[/settings/scheduler/schedules/network]
+interval = 60s
+channel = nrdp
+command = check_network "top-syntax=${status}: ${list}" "detail-syntax=${name}: TX ${sent}bps RX ${received}bps" "perf-syntax=${name}" "filter=enabled = 1"
+
+; ===== PROCESOS Y SERVICIOS =====
+
+; Top 5 procesos por CPU (requiere PDH counters)
+[/settings/scheduler/schedules/top_cpu_processes]
+interval = 60s
+channel = nrdp
+command = check_pdh "counter=\\Process(*)\\% Processor Time" "warn=value > 50" "crit=value > 80" instances "top-syntax=${status}: Top CPU processes" "detail-syntax=${alias}=${value}%" expand-index
+
+; Top 5 procesos por memoria (requiere PDH counters)
+[/settings/scheduler/schedules/top_memory_processes]
+interval = 60s
+channel = nrdp
+command = check_pdh "counter=\\Process(*)\\Working Set" "warn=value > 1G" instances "top-syntax=${status}: Top memory processes" "detail-syntax=${alias}=${value}MB" "perf-config=*(unit:M)" expand-index
+
+; IIS Service (comentar si no está instalado)
+;[/settings/scheduler/schedules/service_iis]
+;interval = 120s
+;channel = nrdp
+;command = check_service service=W3SVC "detail-syntax=IIS: ${name} is ${state}"
+
+; SQL Server (comentar si no está instalado)
+;[/settings/scheduler/schedules/service_sql]
+;interval = 120s
+;channel = nrdp
+;command = check_service service=MSSQLSERVER "detail-syntax=SQL: ${name} is ${state}"
+
+; ===== SESIONES Y USUARIOS =====
+
+; Usuarios conectados (sesiones activas) - via PDH
+[/settings/scheduler/schedules/active_sessions]
+interval = 300s
+channel = nrdp
+command = check_pdh "counter=\\Terminal Services\\Active Sessions" "warn=value > 10" "crit=value > 20" "top-syntax=${status}: ${value} active sessions" "detail-syntax=Active Sessions: ${value}"
+
+; ===== MÉTRICAS AVANZADAS (PDH Counters) =====
+
+; Disco: Cola de lectura/escritura
+[/settings/scheduler/schedules/disk_queue]
+interval = 60s
+channel = nrdp
+command = check_pdh "counter=\\PhysicalDisk(_Total)\\Avg. Disk Queue Length" "warn=value > 2" "crit=value > 5" "top-syntax=${status}: Disk queue ${value}" "detail-syntax=Disk Queue Length: ${value}"
+
+; Memoria: Páginas por segundo (indicador de thrashing)
+[/settings/scheduler/schedules/memory_pages]
+interval = 60s
+channel = nrdp
+command = check_pdh "counter=\\Memory\\Pages/sec" "warn=value > 1000" "crit=value > 5000" "top-syntax=${status}: ${value} pages/sec" "detail-syntax=Memory Pages/sec: ${value}"
+
+; Red: Paquetes enviados/recibidos por segundo
+[/settings/scheduler/schedules/network_packets]
+interval = 60s
+channel = nrdp
+command = check_pdh "counter=\\Network Interface(*)\\Packets/sec" instances "top-syntax=${status}: Network packets" "detail-syntax=${alias}: ${value} pkt/s" expand-index
+
+; ============================================
+; CONFIGURACIÓN DE LOGS
+; ============================================
+[/settings/log]
+level = info
+file name = C:\Program Files\NSClient++\nsclient.log
+
+; ============================================
+; NOTAS IMPORTANTES
+; ============================================
+; 1. Reiniciar servicio después de modificar:
+;    net stop nscp && net start nscp
+;
+; 2. Verificar logs en:
+;    C:\Program Files\NSClient++\nsclient.log
+;
+; 3. Ajustar intervalos según criticidad:
+;    - CPU/Memoria: 10s
+;    - Discos: 30s
+;    - Servicios/Uptime: 60s
+;
+; 4. Para HTTPS cambiar:
+;    address = https://tu-servidor.com:3000/api/nrdp
+;    encryption = aes

@@ -145,6 +145,18 @@ export default function Sidebar() {
                 )}
               </div>
             </Link>
+
+            <Link to="/servers" className={`${itemBase} ${location.pathname.startsWith('/servers') ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-blue-50 dark:hover:bg-blue-900/10'}`}>
+              <div className={iconWrap}>
+                <i className={`fas fa-server ${iconClass}`}></i>
+                {!collapsed && (
+                  <div>
+                    <span className="font-medium block">Servidores</span>
+                    <span className="text-xs text-gray-400 block">Monitoreo NSClient++</span>
+                  </div>
+                )}
+              </div>
+            </Link>
           </nav>
 
           {!collapsed && (

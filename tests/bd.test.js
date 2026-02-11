@@ -21,9 +21,9 @@ async function testDatabaseConnection() {
         if (connection) {
             connection.release(); // Liberar la conexión al pool
             console.log('Conexión liberada correctamente');
+            
         }
     }
 }
-
 // Ejecutar la función de prueba
 testDatabaseConnection();

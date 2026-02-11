@@ -374,32 +374,27 @@ router.get('/ping-results', async (req, res, next) => {
     }
 });
 
-// Endpoint para obtener sucursales en estado DOWN desde host_state
+// Endpoint para obtener sucursales en estado OFFLINE desde host_state_log
 router.get('/current-outages', async (req, res, next) => {
     try {
         const conn = await pool.getConnection();
         
-        // Consulta para obtener sucursales que están DOWN con información detallada
+        // Consulta para obtener sucursales que están OFFLINE usando host_state_log
         const [rows] = await conn.query(
             `SELECT 
                 ips.id,
                 ips.name,
                 ips.ip,
-                host_state.state,
-                host_state.down_since,
-                host_state.unstable_since,
-                host_state.up_since,
-                host_state.updated_at,
-                TIMESTAMPDIFF(MINUTE, host_state.down_since, NOW()) as minutes_down,
-                CASE 
-                    WHEN host_state.down_since IS NOT NULL 
-                    THEN TIMESTAMPDIFF(MINUTE, host_state.down_since, NOW())
-                    ELSE 0 
-                END as downtime_minutes
-            FROM host_state
-            INNER JOIN ips ON host_state.ip_id = ips.id
-            WHERE host_state.state = 'DOWN'
-            ORDER BY host_state.down_since DESC
+                hsl.state,
+                hsl.changed_at as down_since,
+                hsl.changed_at as updated_at,
+                TIMESTAMPDIFF(MINUTE, hsl.changed_at, NOW()) as minutes_down,
+                TIMESTAMPDIFF(MINUTE, hsl.changed_at, NOW()) as downtime_minutes
+            FROM host_state_log hsl
+            INNER JOIN ips ON hsl.ip_id = ips.id
+            WHERE hsl.is_active = 1 
+            AND (hsl.state = 'OFFLINE' OR hsl.state = 'DOWN')
+            ORDER BY hsl.changed_at DESC
         `);
     
         conn.release();
@@ -407,7 +402,7 @@ router.get('/current-outages', async (req, res, next) => {
         // Devolver solo los datos, sin metadatos
         res.json(rows);
     } catch (err) {
-        console.error('Error al obtener sucursales en estado DOWN:', err);
+        console.error('Error al obtener sucursales en estado OFFLINE:', err);
         next(err);
     }
 });

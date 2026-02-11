@@ -11,19 +11,21 @@ const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Impo
 const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); // Importa la función para iniciar pings para servidores
 const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
+const nrdpRoutes = require('./routes/nrdp'); // Importa las rutas NRDP para NSClient++
 const pool = require('./config/db'); // Importa la configuración de la base de datos
 
 // Crear una instancia de Express
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware para parsear JSON
+// Middleware para parsear JSON y URL-encoded (necesario para NRDP)
 app.use(express.json()); 
+app.use(express.urlencoded({ extended: true }));
 
 // CORS para permitir requests desde el frontend (React/Vite en puerto 5173)
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
@@ -39,6 +41,7 @@ app.use('/api/reports', reportsRoutes);  // Rutas para manejar reportes de incid
 app.use('/api/console', consoleRoutes);  // Rutas para manejar información de consola
 app.use('/api/config/', config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
+app.use('/api', nrdpRoutes);  // Rutas NRDP para NSClient++ (monitoreo de servidores)
 
 // Health check endpoint
 app.get('/health', (req, res) => {

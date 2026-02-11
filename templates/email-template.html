@@ -4,179 +4,83 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{TITULO}}</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-            color: #333;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        .header.alert {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-        }
-        .header.recovery {
-            background: linear-gradient(135deg, #26de81 0%, #20bf6b 100%);
-        }
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-            font-weight: 600;
-        }
-        .content {
-            padding: 30px;
-        }
-        .section {
-            margin-bottom: 30px;
-        }
-        .section-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #3498db;
-        }
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .table th {
-            background-color: #34495e;
-            color: white;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 14px;
-        }
-        .table td {
-            padding: 12px;
-            border-bottom: 1px solid #ecf0f1;
-            font-size: 14px;
-        }
-        .table tr:last-child td {
-            border-bottom: none;
-        }
-        .table tr:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-        .subtable {
-            margin-left: 20px;
-            margin-top: 10px;
-        }
-        .subtable .table th {
-            background-color: #7f8c8d;
-            font-size: 13px;
-        }
-        .status-up {
-            background-color: #d4edda;
-            color: #155724;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-        .status-down {
-            background-color: #f8d7da;
-            color: #721c24;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-        }
-        .ping-success {
-            color: #27ae60;
-            font-weight: 600;
-        }
-        .ping-failed {
-            color: #e74c3c;
-            font-weight: 600;
-        }
-        .footer {
-            background-color: #34495e;
-            color: white;
-            padding: 25px 30px;
-            font-size: 14px;
-        }
-        .footer-section {
-            margin-bottom: 15px;
-        }
-        .footer-section:last-child {
-            margin-bottom: 0;
-        }
-        .contact-info {
-            background-color: #2c3e50;
-            padding: 15px;
-            border-radius: 6px;
-            margin-top: 10px;
-        }
-        .contact-info strong {
-            color: #3498db;
-        }
-        .timestamp {
-            font-style: italic;
-            color: #7f8c8d;
-            font-size: 12px;
-        }
-        .maps-link {
-            color: #3498db;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .maps-link:hover {
-            text-decoration: underline;
-        }
-    </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header {{TIPO_CLASE}}">
-            <h1>{{TITULO_HEADER}}</h1>
-            <div class="timestamp">{{FECHA_GENERACION}}</div>
-        </div>
-        
-        <div class="content">
-            {{CONTENIDO_TABLAS}}
-        </div>
-        
-        <div class="footer">
-            
-            <div class="contact-info">
-                <div class="footer-section">
-                    <strong>Para reportar Telnor:</strong> Marcar ext 44011 → Opción 1 → Opción 2
-                </div>
-                <div class="footer-section">
-                    <strong>Para reportar TotalPlay:</strong> Marcar ext 44025 → Opción 2
-                </div>
-                <div class="footer-section">
-                    <strong>Para reportar Konecta:</strong> Marcar ext 44007 → Comentar a asesor número de farmacia
-                </div>
-            </div>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa; color: #2c3e50;">
+    
+    <!-- Main Container -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f9fa; padding: 20px 0;">
+        <tr>
+            <td align="center">
+                <table width="800" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #dee2e6; max-width: 800px;">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #343a40; color: #ffffff; padding: 30px; text-align: center;">
+                            <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.5px;">
+                                {{TITULO_HEADER}}
+                            </h1>
+                            <p style="margin: 10px 0 0 0; font-size: 14px; color: #adb5bd; font-style: italic;">
+                                {{FECHA_GENERACION}}
+                            </p>
+                        </td>
+                    </tr>
 
-            <div class="footer-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #4a5b6d;">
-                <strong style="color: #e74c3c;">AVISO DE CONFIDENCIALIDAD:</strong><br>
-                La información contenida en este informe es propiedad de <strong>Operadora Farmacéutica de Baja California S. de R.L. de C.V.</strong> 
-                y tiene carácter confidencial. Queda estrictamente prohibida su distribución, reproducción o divulgación a terceros sin autorización expresa.
-            </div>
-            
-        </div>
-    </div>
+                    <!-- Spacer -->
+                    <tr>
+                        <td style="height: 20px; background-color: #ffffff;"></td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 25px;">
+                            {{CONTENIDO_TABLAS}}
+                        </td>
+                    </tr>
+                    
+                    <!-- Instructions Section -->
+                    <tr>
+                        <td style="padding: 25px; background-color: #f8f9fa; border-top: 1px solid #dee2e6;">
+                            <h3 style="margin: 0 0 20px 0; color: #495057; font-size: 18px; font-weight: 600;">
+                                INSTRUCCIONES PARA REPORTAR
+                            </h3>
+                            
+                            <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #dee2e6;">
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 15px; border-bottom: 1px solid #dee2e6;">
+                                        <strong>Para reportar Telnor:</strong> Marcar ext 44011 → Opción 1 → Opción 2
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 15px; border-bottom: 1px solid #dee2e6;">
+                                        <strong>Para reportar Telnor GDL:</strong> Marcar ext 44028 → Opción 1 → Opción 2
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #f8f9fa;">
+                                    <td style="padding: 15px; border-bottom: 1px solid #dee2e6;">
+                                        <strong>Para reportar TotalPlay:</strong> Marcar ext 44025 → Opción 2
+                                    </td>
+                                </tr>
+                                <tr style="background-color: #ffffff;">
+                                    <td style="padding: 15px;">
+                                        <strong>Para reportar Konecta:</strong> Marcar ext 44007 → Comentar a asesor número de farmacia
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #343a40; color: #adb5bd; padding: 20px; text-align: center; font-size: 12px; line-height: 1.5;">
+                            <strong style="color: #ffffff;">AVISO DE CONFIDENCIALIDAD:</strong><br>
+                            La información contenida en este informe es propiedad de Operadora Farmacéutica de Baja California S. de R.L. de C.V. y tiene carácter confidencial. Queda estrictamente prohibida su distribución, reproducción o divulgación a terceros sin autorización expresa.
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+    
 </body>
 </html>
