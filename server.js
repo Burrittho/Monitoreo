@@ -9,7 +9,7 @@ const config = require('./routes/config'); // Importa la configuración
 const {iniciarPingsContinuos} = require('./models/ping'); // Importa la función para iniciar pings
 const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Importa la función para iniciar pings para DVR
 const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); // Importa la función para iniciar pings para servidores
-const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
+const { startWorker, getMonitoringRuntimeStatus } = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
 const nrdpRoutes = require('./routes/nrdp'); // Importa las rutas NRDP para NSClient++
 const pool = require('./config/db'); // Importa la configuración de la base de datos
@@ -46,6 +46,29 @@ app.use('/api', nrdpRoutes);  // Rutas NRDP para NSClient++ (monitoreo de servid
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+
+app.get('/ready', (req, res) => {
+    const runtime = getMonitoringRuntimeStatus();
+    const degraded = Boolean(runtime.db?.degraded);
+
+    res.status(degraded ? 503 : 200).json({
+        status: degraded ? 'degraded' : 'ready',
+        degraded,
+        db: runtime.db,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/api/meta/runtime', (req, res) => {
+    const runtime = getMonitoringRuntimeStatus();
+    res.json({
+        degraded: Boolean(runtime.db?.degraded),
+        dbOffline: Boolean(runtime.db?.degraded),
+        runtime,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Middleware de manejo de errores
