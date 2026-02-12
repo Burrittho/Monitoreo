@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { apiGet } from '../lib/api'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import BranchCard from '../components/BranchCard'
 import DvrCard from '../components/DvrCard'
 import IncidentsView from '../components/IncidentsView'
+import { subscribeLiveMonitor, getLiveMonitorSnapshot } from '../store/liveMonitorStore'
 
 export default function Monitor() {
-  const [branchResults, setBranchResults] = useState([])
-  const [dvrResults, setDvrResults] = useState([])
-  const [serverResults, setServerResults] = useState([])
   const [view, setView] = useState('both') // both | branches | dvr | servers | incidents
-  const refreshMsRef = useRef(30000)
-  const timerRef = useRef(null)
-
+  const { branches: branchResults, dvr: dvrResults, servers: serverResults } = useSyncExternalStore(
+    subscribeLiveMonitor,
+    getLiveMonitorSnapshot,
+    getLiveMonitorSnapshot,
+  )
   const filteredBranchResults = useMemo(() => {
     const data = Array.isArray(branchResults) ? branchResults : []
     // ordenar por nombre y agrupar: rojos, amarillos, verdes
@@ -48,48 +47,6 @@ export default function Monitor() {
     })
     return [...red, ...yellow, ...green]
   }, [serverResults])
-
-  async function loadOnce() {
-    // intervalo desde backend
-    try {
-      const cfg = await apiGet('/api/config/refresh-interval')
-      if (cfg?.intervalo) refreshMsRef.current = cfg.intervalo
-    } catch {}
-
-    try {
-      const branches = await apiGet('/api/ips_report/ping-results')
-      setBranchResults(Array.isArray(branches) ? branches[0] : branches)
-    } catch (e) {
-      console.error('Error branches', e)
-    }
-
-    try {
-      const dvr = await apiGet('/api/ips_report/ping-results-dvr')
-      setDvrResults(Array.isArray(dvr) ? dvr[0] : dvr)
-    } catch (e) {
-      console.error('Error dvr', e)
-    }
-
-    try {
-      const servers = await apiGet('/api/ips_report/ping-results-server')
-      setServerResults(Array.isArray(servers) ? servers[0] : servers)
-    } catch (e) {
-      console.error('Error servers', e)
-    }
-  }
-
-  function schedule() {
-    clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(async () => {
-      await loadOnce()
-      schedule()
-    }, refreshMsRef.current || 30000)
-  }
-
-  useEffect(() => {
-    loadOnce().then(schedule)
-    return () => clearTimeout(timerRef.current)
-  }, [])
 
   return (
     <div className="p-6 space-y-6">
