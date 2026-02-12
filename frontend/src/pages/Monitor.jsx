@@ -1,16 +1,40 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import BranchCard from '../components/BranchCard'
 import DvrCard from '../components/DvrCard'
 import IncidentsView from '../components/IncidentsView'
-import useLiveStatus from '../hooks/useLiveStatus'
+import { subscribeLiveMonitor, getLiveMonitorSnapshot } from '../store/liveMonitorStore'
 
 export default function Monitor() {
-  const [view, setView] = useState('both')
-  const { snapshot, degradedMode, connected } = useLiveStatus()
+  const [view, setView] = useState('both') // both | branches | dvr | servers | incidents
+  const { branches: branchResults, dvr: dvrResults, servers: serverResults } = useSyncExternalStore(
+    subscribeLiveMonitor,
+    getLiveMonitorSnapshot,
+    getLiveMonitorSnapshot,
+  )
+  const filteredBranchResults = useMemo(() => {
+    const data = Array.isArray(branchResults) ? branchResults : []
+    // ordenar por nombre y agrupar: rojos, amarillos, verdes
+    const sorted = [...data].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    const red = [], yellow = [], green = []
+    sorted.forEach(r => {
+      if (!r.success) red.push(r)
+      else if (r.latency > 70) yellow.push(r)
+      else green.push(r)
+    })
+    return [...red, ...yellow, ...green]
+  }, [branchResults])
 
-  const branchResults = snapshot?.groups?.branches?.hosts || []
-  const dvrResults = snapshot?.groups?.dvr?.hosts || []
-  const serverResults = snapshot?.groups?.servers?.hosts || []
+  const filteredDvrResults = useMemo(() => {
+    const data = Array.isArray(dvrResults) ? dvrResults : []
+    const sorted = [...data].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    const red = [], yellow = [], green = []
+    sorted.forEach(r => {
+      if (!r.success) red.push(r)
+      else if (r.latency > 70) yellow.push(r)
+      else green.push(r)
+    })
+    return [...red, ...yellow, ...green]
+  }, [dvrResults])
 
   const sortedByHealth = useMemo(() => (items) => {
     const sorted = [...items].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -23,11 +47,7 @@ export default function Monitor() {
       else green.push(r)
     })
     return [...red, ...yellow, ...green]
-  }, [])
-
-  const filteredBranchResults = sortedByHealth(branchResults)
-  const filteredDvrResults = sortedByHealth(dvrResults)
-  const filteredServerResults = sortedByHealth(serverResults)
+  }, [serverResults])
 
   return (
     <div className="p-6 space-y-6">
