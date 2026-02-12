@@ -7,8 +7,9 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "node --test tests/unit/*.test.js",
-    "start": "node server.js"
+    "test": "jest --runInBand",
+    "start": "node server.js",
+    "test:ci": "jest --ci --runInBand"
   },
   "author": "CarlosG",
   "license": "ISC",
@@ -22,7 +23,15 @@
     "mysql2": "^3.13.0",
     "nodemailer": "^6.10.0",
     "raw-socket": "^1.8.1",
-    "xml2js": "^0.6.2",
-    "compression": "^1.7.5"
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.1.1"
+  },
+  "jest": {
+    "testMatch": [
+      "**/tests/**/*.spec.js"
+    ]
   }
 }

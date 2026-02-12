@@ -1,40 +1,46 @@
 # Monitoreo
 
-Sistema de monitoreo de IPs (ping/logs/downtime), alertas por correo y vistas web.
+## Tests unitarios (Jest)
 
-## Requisitos
-- Node.js 18+
-- MySQL/MariaDB
-- `fping` instalado en el servidor
+Este repositorio usa **Jest** para pruebas unitarias de lógica pura y validación de query params.
 
-## Variables de entorno
-- `PORT`
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE`
-- `DB_CONNECTION_LIMIT`
-- `CORS_ORIGINS` (coma separada)
-- `API_KEY` (opcional para endpoints admin)
-- `DB_BACKFILL_ON_RECOVERY` (default `false`)
-- `DB_HEALTH_INITIAL_RETRY_MS`, `DB_HEALTH_MAX_RETRY_MS`
+### Qué se está probando
 
-## Ejecución
+- Lógica de consecutivos/downtime (sin acceso a BD).
+- Validadores de query params (`ipId`, rango de fechas, `limit/offset`).
+- Validaciones de rutas con **mocks/stubs** de capa de datos (`models/grafica`) para evitar dependencia de BD real.
+
+## Ejecución local
+
+1. Instalar dependencias (incluye devDependencies):
+
 ```bash
-npm install
-npm start
+npm ci
 ```
 
-## Tests
+2. Ejecutar tests:
+
 ```bash
 npm test
 ```
 
-## Endpoints nuevos
-- `GET /api/live`
-- `GET /api/live/stream`
-- `GET /api/logs?ipId=&from=&to=&limit=&offset=`
-- `GET /api/downtime?ipId=&from=&to=`
-- `GET /api/summary?from=&to=`
-- `GET /api/health`
-- `GET /api/ready`
+## Ejecución en CI
 
-## Compatibilidad
-Se mantienen montadas rutas legacy (`/api/ips_report`, `/api/ping_history`, etc.) para migración progresiva.
+En CI se recomienda usar instalación limpia y modo CI de Jest:
+
+```bash
+npm ci
+npm run test:ci
+```
+
+### Ejemplo (GitHub Actions)
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: '20'
+    cache: npm
+
+- run: npm ci
+- run: npm run test:ci
+```

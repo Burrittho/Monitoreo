@@ -1,13 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps, getPingHistoryForChart, getChartStatistics } = require('../models/grafica');
-const pingRepository = require('../repositories/pingRepository');
-const { parsePagination } = require('../utils/pagination');
-
-const CHART_LIMIT_DEFAULT = 1000;
-const CHART_LIMIT_MAX = 10000;
-const LOGS_LIMIT_DEFAULT = 100;
-const LOGS_LIMIT_MAX = 2000;
+const { validateIpId, validateDateRange, validatePagination } = require('../utils/queryValidators');
+const { calculateDowntimeCountFromChartData, countDowntimesFromSuccessSeries } = require('../utils/pingAnalytics');
 
 /**
  * GET /api/ping-history/chart
@@ -19,22 +14,35 @@ const LOGS_LIMIT_MAX = 2000;
  */
 router.get('/chart', async (req, res) => {
   try {
-    const { ipId, startDate, endDate } = req.query;
-    
-    // Validaciones básicas
-    if (!ipId) {
-      return res.status(400).json({ error: 'Se requiere ipId' });
+    const { ipId, startDate, endDate, limit, offset } = req.query;
+
+    const ipIdValidation = validateIpId(ipId);
+    if (!ipIdValidation.valid) {
+      return res.status(400).json({ error: ipIdValidation.error });
     }
-    
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h atrás por defecto
-    const end = endDate ? new Date(endDate) : new Date();
-    
-    const { limit: recordLimit } = parsePagination(req.query, {
-      defaultLimit: CHART_LIMIT_DEFAULT,
-      maxLimit: CHART_LIMIT_MAX,
-    });
-    
-    const data = await getChartData(ipId, start, end, recordLimit);
+
+    const dateValidation = validateDateRange(startDate, endDate);
+    if (!dateValidation.valid) {
+      return res.status(400).json({ error: dateValidation.error });
+    }
+
+    const paginationValidation = validatePagination(limit, offset, { defaultLimit: 0, maxLimit: 86400, defaultOffset: 0, allowZeroLimit: true });
+    if (!paginationValidation.valid) {
+      return res.status(400).json({ error: paginationValidation.error });
+    }
+
+    const start = dateValidation.start;
+    const end = dateValidation.end;
+
+    let recordLimit = paginationValidation.value.limit;
+    if (recordLimit === 0) {
+      const timeRangeHours = (end - start) / (1000 * 60 * 60);
+      if (timeRangeHours <= 1) recordLimit = 3600;
+      else if (timeRangeHours <= 12) recordLimit = 43200;
+      else recordLimit = 86400;
+    }
+
+    const data = await getChartData(ipIdValidation.value, start, end, recordLimit);
     
     // Mapear las estadísticas del modelo a los nombres que espera el frontend
     const mappedStatistics = {
@@ -42,7 +50,7 @@ router.get('/chart', async (req, res) => {
       min_latency: Number(data.statistics.minLatency) || 0,
       max_latency: Number(data.statistics.maxLatency) || 0,
       packet_loss: Number(data.statistics.failureCount) || 0,
-      downtime_count: calculateDowntimeCount(data.chartData),
+      downtime_count: calculateDowntimeCountFromChartData(data.chartData),
       total_records: Number(data.statistics.totalPings) || 0,
       successful_pings: Number(data.statistics.successCount) || 0
     };
@@ -70,35 +78,38 @@ router.get('/chart', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const { ipId, startDate, endDate } = req.query;
-    if (!ipId) {
-      return res.status(400).json({ error: 'Se requiere ipId' });
+    const { ipId, startDate, endDate, limit, offset } = req.query;
+
+    const ipIdValidation = validateIpId(ipId);
+    if (!ipIdValidation.valid) {
+      return res.status(400).json({ error: ipIdValidation.error });
     }
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const end = endDate ? new Date(endDate) : new Date();
 
-    const { limit: recordLimit } = parsePagination(req.query, {
-      defaultLimit: CHART_LIMIT_DEFAULT,
-      maxLimit: CHART_LIMIT_MAX,
-    });
+    const dateValidation = validateDateRange(startDate, endDate);
+    if (!dateValidation.valid) {
+      return res.status(400).json({ error: dateValidation.error });
+    }
 
-    // Obtener datos y calcular estadísticas sin construir datasets de Chart.js
-    const pingData = await getPingHistoryForChart(ipId, start, end, recordLimit);
+    const paginationValidation = validatePagination(limit, offset, { defaultLimit: 0, maxLimit: 86400, defaultOffset: 0, allowZeroLimit: true });
+    if (!paginationValidation.valid) {
+      return res.status(400).json({ error: paginationValidation.error });
+    }
+
+    const start = dateValidation.start;
+    const end = dateValidation.end;
+
+    let recordLimit = paginationValidation.value.limit;
+    if (recordLimit === 0) {
+      const timeRangeHours = (end - start) / (1000 * 60 * 60);
+      if (timeRangeHours <= 1) recordLimit = 3600;
+      else if (timeRangeHours <= 12) recordLimit = 43200;
+      else recordLimit = 86400;
+    }
+
+    const pingData = await getPingHistoryForChart(ipIdValidation.value, start, end, recordLimit);
     const stats = getChartStatistics(pingData);
 
-    // Calcular downtime_count (10 fallos consecutivos = 1 caída)
-    let downtimeCount = 0;
-    let consecutiveFailures = 0;
-    for (let i = 0; i < pingData.length; i++) {
-      if (pingData[i].success === 0) {
-        consecutiveFailures++;
-        if (consecutiveFailures === 10) {
-          downtimeCount++;
-        }
-      } else {
-        consecutiveFailures = 0;
-      }
-    }
+    const downtimeCount = countDowntimesFromSuccessSeries(pingData.map((entry) => entry.success));
 
     const mappedStatistics = {
       average_latency: Number(stats.avgLatency) || 0,
@@ -116,38 +127,6 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
-
-/**
- * Calcula el número de períodos de caída (downtime) a partir de los datos del chart
- * @param {Object} chartData - Datos del chart de Chart.js
- * @returns {number} Número de períodos de caída detectados
- */
-function calculateDowntimeCount(chartData) {
-  if (!chartData || !chartData.datasets || chartData.datasets.length < 2) {
-    return 0;
-  }
-  
-  const failureData = chartData.datasets[1].data; // Segunda dataset contiene los fallos
-  if (!Array.isArray(failureData)) {
-    return 0;
-  }
-  
-  let downtimeCount = 0;
-  let consecutiveFailures = 0;
-  
-  for (let i = 0; i < failureData.length; i++) {
-    if (failureData[i] !== null) { // Fallo detectado
-      consecutiveFailures++;
-      if (consecutiveFailures === 10) { // 10 fallos consecutivos = 1 downtime
-        downtimeCount++;
-      }
-    } else {
-      consecutiveFailures = 0; // Reset al encontrar un éxito
-    }
-  }
-  
-  return downtimeCount;
-}
 
 /**
  * GET /api/ping-history/ips

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps } = require('../models/grafica');
-const { validate, chartDataValidators } = require('../middleware/validation');
+const { validateIpId, validateDateRange, validatePagination } = require('../utils/queryValidators');
 
 /**
  * Endpoint para obtener datos de gráficas
@@ -9,14 +9,28 @@ const { validate, chartDataValidators } = require('../middleware/validation');
  */
 router.get('/chart-data', validate(chartDataValidators), async (req, res, next) => {
     try {
-        const { ipId, startDate, endDate } = req.query;
-        
+        const { ipId, startDate, endDate, limit, offset } = req.query;
+
+        const ipIdValidation = validateIpId(ipId);
+        if (!ipIdValidation.valid) {
+            return res.status(400).json({ error: ipIdValidation.error });
+        }
+
+        const dateValidation = validateDateRange(startDate, endDate, { requireBoth: true });
+        if (!dateValidation.valid) {
+            return res.status(400).json({ error: dateValidation.error });
+        }
+
+        const paginationValidation = validatePagination(limit, offset, { defaultLimit: 841000, maxLimit: 841000, allowZeroLimit: false });
+        if (!paginationValidation.valid) {
+            return res.status(400).json({ error: paginationValidation.error });
+        }
 
         const data = await getChartData(
-            parseInt(ipId), 
-            startDate, 
-            endDate, 
-            limit
+            ipIdValidation.value,
+            dateValidation.start,
+            dateValidation.end,
+            paginationValidation.value.limit,
         );
         
         res.json(data);
