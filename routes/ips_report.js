@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db'); // Configuración de conexión a la base de datos
+const { buildIncidents, calculateConsecutiveTransitions, resolveAssetThresholds } = require('../services/downtimeService');
+const monitoreoConfig = require('../config/monitoreo');
 
 // endpoint para obtener los logs de ping y calcular la latencia media (Reporte)
 router.get('/latency', async (req, res) => {
@@ -127,7 +129,7 @@ router.get('/packetloss', async (req, res) => {
 
 // endpoint para contar caidas de ping (Reporte)
 router.get('/downtime', async (req, res) => {
-    const { ipId, startDate, endDate } = req.query;
+    const { ipId, startDate, endDate, assetType = 'sucursal' } = req.query;
 
     if (!ipId || !startDate || !endDate) {
         return res.status(400).send('ipId, startDate, and endDate query parameters are required.');
@@ -136,7 +138,9 @@ router.get('/downtime', async (req, res) => {
     let connection;
     try {
         connection = await pool.getConnection();
-        
+
+        const thresholds = resolveAssetThresholds(assetType, monitoreoConfig.ASSET_THRESHOLDS);
+
         // Obtener los datos de ping ordenados cronológicamente
         const [pingData] = await connection.query(`
             SELECT success, fecha
@@ -144,146 +148,31 @@ router.get('/downtime', async (req, res) => {
             WHERE ip_id = ? AND fecha BETWEEN ? AND ?
             ORDER BY fecha ASC
         `, [ipId, startDate, endDate]);
-        
-        // Si no hay datos, retornar array vacío
+
         if (pingData.length === 0) {
             return res.json([]);
         }
 
-        // Verificar si todos los datos son success=0 (sin datos suficientes)
-        let allFailures = true;
-        for (let i = 0; i < pingData.length; i++) {
-            if (pingData[i].success === 1) {
-                allFailures = false;
-                break;
-            }
-        }
-
-        // Si todos son fallos y hay pocos datos, considerarlo como "sin datos suficientes"
-        if (allFailures && pingData.length < 20) {
-            return res.json([{
-                downtime_start: startDate,
-                downtime_end: endDate,
-                downtime_duration: 'N/A',
-                status: 'insufficient_data',
-                message: 'No hay datos suficientes para determinar incidencias'
-            }]);
-        }
-        
-        // Buscar si había una caída activa antes del rango
-        // Optimización: buscar solo los últimos 10 registros para verificar caída activa
+        // Identificar si ya venía en caída antes del rango
         const [priorData] = await connection.query(`
             SELECT success
             FROM ping_logs
             WHERE ip_id = ? AND fecha < ?
             ORDER BY fecha DESC
-            LIMIT 10
-        `, [ipId, startDate]);
-        
-        // Verificar si hay caída activa al inicio del período
-        let activeOutageAtStart = priorData.length >= 10 && priorData.every(row => row.success === 0);
-        
-        // Procesar los datos para encontrar intervalos de caída
-        const intervals = [];
-        let inOutage = activeOutageAtStart;
-        let failRun = 0;
-        let successRun = 0;
-        let failRunStartTime = null;
-        let outageStart = activeOutageAtStart ? startDate : null;
-        let lastFailureTime = null;
-        let incidentsCount = 0;
+            LIMIT ?
+        `, [ipId, startDate, thresholds.failThreshold]);
 
-        for (let i = 0; i < pingData.length; i++) {
-            const { success, fecha } = pingData[i];
-            const ts = fecha;
+        const activeOutageAtStart =
+            priorData.length >= thresholds.failThreshold && priorData.every(row => row.success === 0);
 
-            if (success === 0) {
-                // fallo
-                if (failRun === 0) failRunStartTime = ts;
-                failRun++;
-                lastFailureTime = ts;
-                successRun = 0; // reiniciar éxitos
+        const intervals = buildIncidents(pingData, {
+            failThreshold: thresholds.failThreshold,
+            recoveryThreshold: thresholds.recoveryThreshold,
+            startDate,
+            endDate,
+            initialState: activeOutageAtStart ? 'OFFLINE' : 'ONLINE'
+        });
 
-                // si alcanzamos 10 fallos y no estábamos en caída, comienza la caída
-                if (!inOutage && failRun >= 10) {
-                    inOutage = true;
-                    outageStart = failRunStartTime || ts;
-                    incidentsCount++;
-                }
-            } else {
-                // éxito
-                successRun++;
-                failRun = 0;
-                failRunStartTime = null;
-
-                // si estamos en caída y alcanzamos 10 éxitos, finaliza la caída
-                if (inOutage && successRun >= 10) {
-                    const outageEnd = lastFailureTime || ts; // fin en el último fallo previo a la racha de éxitos
-
-                    // calcular duración
-                    const start = new Date(outageStart);
-                    const end = new Date(outageEnd);
-                    const durationMs = Math.max(0, end - start);
-                    const hours = Math.floor(durationMs / (1000 * 60 * 60));
-                    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
-                    let durationString = '';
-                    if (hours > 0) durationString += `${hours}h `;
-                    if (minutes > 0) durationString += `${minutes}m `;
-                    durationString += `${seconds}s`;
-
-                    intervals.push({
-                        downtime_start: outageStart,
-                        downtime_end: outageEnd,
-                        downtime_duration: durationString.trim(),
-                        status: 'completed',
-                        incident_number: incidentsCount
-                    });
-
-                    // reset de estado de caída
-                    inOutage = false;
-                    outageStart = null;
-                    lastFailureTime = null;
-                }
-            }
-        }
-
-        // Si terminó el rango aún en caída, crear intervalo activo
-        if (inOutage && outageStart) {
-            const outageEnd = lastFailureTime || endDate;
-            const start = new Date(outageStart);
-            const end = new Date(outageEnd);
-            const durationMs = Math.max(0, end - start);
-            const hours = Math.floor(durationMs / (1000 * 60 * 60));
-            const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
-            let durationString = '';
-            if (hours > 0) durationString += `${hours}h `;
-            if (minutes > 0) durationString += `${minutes}m `;
-            durationString += `${seconds}s`;
-
-            intervals.push({
-                downtime_start: outageStart,
-                downtime_end: outageEnd,
-                downtime_duration: durationString.trim(),
-                status: activeOutageAtStart ? 'ongoing_throughout' : 'ongoing_started',
-                incident_number: incidentsCount
-            });
-        }
-        
-        // Si después de revisar, no encontramos caídas, pero todos son fallos, 
-        // se trata de un periodo de caída completa
-        if (intervals.length === 0 && allFailures && pingData.length >= 20) {
-            intervals.push({
-                downtime_start: startDate,
-                downtime_end: endDate,
-                downtime_duration: 'Todo el período',
-                status: 'complete_outage',
-                message: 'Caída durante todo el período analizado',
-                incident_number: 1
-            });
-        }
-        
         res.json(intervals);
     } catch (err) {
         console.error('Error in downtime endpoint:', err);
@@ -313,22 +202,16 @@ router.get('/downtime-count', async (req, res) => {
             ORDER BY fecha ASC
         `, [ipId, startDate, endDate]);
         
-        // Calcular downtime_count usando la misma lógica que ping_history
-        let downtimeCount = 0;
-        let consecutiveFailures = 0;
-        
-        for (let i = 0; i < pingData.length; i++) {
-            if (pingData[i].success === 0) {
-                consecutiveFailures++;
-                if (consecutiveFailures === 10) { // 10 fallos consecutivos = 1 downtime
-                    downtimeCount++;
-                }
-            } else {
-                consecutiveFailures = 0; // Reset al encontrar un éxito
-            }
-        }
-        
-        res.json({ 
+        const { failThreshold, recoveryThreshold } = resolveAssetThresholds(req.query.assetType || 'sucursal', monitoreoConfig.ASSET_THRESHOLDS);
+        const transitions = calculateConsecutiveTransitions(pingData, {
+            failThreshold,
+            recoveryThreshold,
+            initialState: 'ONLINE'
+        });
+
+        const downtimeCount = transitions.transitions.filter(t => t.type === 'DOWN').length;
+
+        res.json({
             downtime_count: downtimeCount
         });
     } catch (err) {

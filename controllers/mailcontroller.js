@@ -1,282 +1,266 @@
 /**
- * Mail Controller - Sistema de monitoreo de hosts
- * Detecta cambios de estado (ONLINE/OFFLINE) y envía alertas por correo
- * 
- * Responsabilidades:
- * - Analizar logs de ping para detectar cambios de estado
- * - Coordinar el envío de alertas de caída y recuperación
- * - Gestionar el ciclo de monitoreo continuo
+ * Monitoring controller desacoplado de persistencia.
  */
 
 const ConnectionManager = require('../services/connectionManager');
+const DbHealthService = require('../services/dbHealthService');
+const InventoryService = require('../services/inventoryService');
+const PersistenceService = require('../services/persistenceService');
+const stateStore = require('../services/stateStore');
 const { sendMonitoringEmail } = require('../services/emailService');
 const { buildIncidentEmail, formatDate, formatDuration } = require('../services/emailTemplateBuilder');
-const { initializeHostStates, getHostState, persistHostState, logStateTransition } = require('../models/hostRepository');
+const { initializeHostStates, logStateTransition } = require('../models/hostRepository');
 const { getSucursalInfo, getConsolaInfo, getInternetInfo } = require('../models/dataRepository');
 const config = require('../config/monitoreo');
+const { resolveAssetThresholds, getCurrentHostState } = require('../services/downtimeService');
 
-// Variables globales del servicio
 let connectionManager = null;
-let pool = null;
-let hostsStatus = {};
+let dbHealthService = null;
+let inventoryService = null;
+let persistenceService = null;
 let checkInterval = config.CHECK_INTERVAL;
+let thresholdsByAsset = { ...config.ASSET_THRESHOLDS };
 
-/**
- * Analiza los últimos 360 logs de ping para determinar el estado del host
- * Requiere 300 logs consecutivos del mismo tipo (éxito o fallo) para cambiar estado
- * Retorna el timestamp exacto del primer log que inició la secuencia consecutiva
- */
-async function analyzeHost(ipId) {
-  try {
-    const [logs] = await connectionManager.executeQuery(
-      'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? ORDER BY fecha DESC LIMIT ?',
-      [ipId, config.LOGS_TO_ANALYZE],
-      'queries'
-    );
-    
-    if (logs.length === 0) {
-      return { 
-        shouldBeOnline: false, 
-        shouldBeOffline: false, 
-        consecutiveSuccess: 0, 
-        consecutiveFails: 0,
-        totalLogs: 0,
-        firstSuccessTimestamp: null,
-        firstFailTimestamp: null
-      };
-    }
-    
-    // Invertir para analizar en orden cronológico (más antiguo a más reciente)
-    logs.reverse();
-    
-    // Buscar la secuencia más larga de éxitos y fallos consecutivos
-    let consecutiveSuccess = 0;
-    let consecutiveFails = 0;
-    let maxConsecutiveSuccess = 0;
-    let maxConsecutiveFails = 0;
-    let firstSuccessTimestamp = null;
-    let firstFailTimestamp = null;
-    let tempSuccessStart = null;
-    let tempFailStart = null;
-    
-    for (const log of logs) {
-      if (log.success === 1) {
-        if (consecutiveSuccess === 0) {
-          tempSuccessStart = log.timestamp;
-        }
-        consecutiveSuccess++;
-        consecutiveFails = 0;
-        tempFailStart = null;
-        
-        if (consecutiveSuccess > maxConsecutiveSuccess) {
-          maxConsecutiveSuccess = consecutiveSuccess;
-          firstSuccessTimestamp = tempSuccessStart;
-        }
-      } else {
-        if (consecutiveFails === 0) {
-          tempFailStart = log.timestamp;
-        }
-        consecutiveFails++;
-        consecutiveSuccess = 0;
-        tempSuccessStart = null;
-        
-        if (consecutiveFails > maxConsecutiveFails) {
-          maxConsecutiveFails = consecutiveFails;
-          firstFailTimestamp = tempFailStart;
-        }
-      }
-    }
-    
+function analyzeRecentChecks(ipId) {
+  const host = stateStore.getHost(ipId);
+  const checks = host?.recentChecks || [];
+
+  if (!checks.length) {
     return {
-      shouldBeOnline: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED,
-      shouldBeOffline: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED,
-      consecutiveSuccess: maxConsecutiveSuccess,
-      consecutiveFails: maxConsecutiveFails,
-      totalLogs: logs.length,
-      firstSuccessTimestamp: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED ? firstSuccessTimestamp : null,
-      firstFailTimestamp: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED ? firstFailTimestamp : null
-    };
-  } catch (error) {
-    console.error(`Error analizando logs de IP ${ipId}:`, error.message);
-    return { 
-      shouldBeOnline: false, 
-      shouldBeOffline: false, 
-      consecutiveSuccess: 0, 
+      shouldBeOnline: false,
+      shouldBeOffline: false,
+      consecutiveSuccess: 0,
       consecutiveFails: 0,
       totalLogs: 0,
       firstSuccessTimestamp: null,
-      firstFailTimestamp: null
+      firstFailTimestamp: null,
+      consecutiveSuccess: 0,
+      consecutiveFails: 0,
+      totalLogs: 0
     };
   }
+
+  const recent = checks.slice(-config.LOGS_TO_ANALYZE);
+  let maxConsecutiveSuccess = 0;
+  let maxConsecutiveFails = 0;
+  let consecutiveSuccess = 0;
+  let consecutiveFails = 0;
+  let firstSuccessTimestamp = null;
+  let firstFailTimestamp = null;
+  let tempSuccessStart = null;
+  let tempFailStart = null;
+
+  for (const item of recent) {
+    if (item.success === 1) {
+      if (consecutiveSuccess === 0) tempSuccessStart = item.timestamp;
+      consecutiveSuccess++;
+      consecutiveFails = 0;
+      tempFailStart = null;
+      if (consecutiveSuccess > maxConsecutiveSuccess) {
+        maxConsecutiveSuccess = consecutiveSuccess;
+        firstSuccessTimestamp = tempSuccessStart;
+      }
+    } else {
+      if (consecutiveFails === 0) tempFailStart = item.timestamp;
+      consecutiveFails++;
+      consecutiveSuccess = 0;
+      tempSuccessStart = null;
+      if (consecutiveFails > maxConsecutiveFails) {
+        maxConsecutiveFails = consecutiveFails;
+        firstFailTimestamp = tempFailStart;
+      }
+    }
+  }
+
+  return {
+    shouldBeOnline: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED,
+    shouldBeOffline: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED,
+    consecutiveSuccess: maxConsecutiveSuccess,
+    consecutiveFails: maxConsecutiveFails,
+    totalLogs: recent.length,
+    firstSuccessTimestamp: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED ? firstSuccessTimestamp : null,
+    firstFailTimestamp: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED ? firstFailTimestamp : null
+  };
 }
 
-/**
- * Verifica el estado de un host y envía alertas si hay cambios
- */
 async function checkHost({ id: ipId, ip, name }) {
+  stateStore.ensureHost(ipId, { ip, name });
+  const currentState = stateStore.getHost(ipId);
+  if (!currentState) return;
+
+  const analysis = analyzeRecentChecks(ipId);
+  const now = Date.now();
+
+  let shouldChange = false;
+  let newStateValue = currentState.state;
+  let exactTimestamp = now;
+
+  if (currentState.state === config.STATE_UP && analysis.shouldBeOffline) {
+    shouldChange = true;
+    newStateValue = config.STATE_DOWN;
+    exactTimestamp = analysis.firstFailTimestamp || now;
+    console.log(`⚠️ ${name} (${ip}) → OFFLINE [${analysis.consecutiveFails}/${analysis.totalLogs}]`);
+  } else if (currentState.state === config.STATE_DOWN && analysis.shouldBeOnline) {
+    shouldChange = true;
+    newStateValue = config.STATE_UP;
+    exactTimestamp = analysis.firstSuccessTimestamp || now;
+    console.log(`✅ ${name} (${ip}) → ONLINE [${analysis.consecutiveSuccess}/${analysis.totalLogs}]`);
+  }
+
+  if (!shouldChange) return;
+
+  logStateTransition(ipId, currentState.state, newStateValue, analysis);
+  const { fromState, host } = stateStore.applyTransition(ipId, newStateValue, exactTimestamp);
+
+  persistenceService.enqueueTransition({
+    ipId,
+    newState: newStateValue,
+    downSince: host.downSince,
+    upSince: host.upSince,
+    eventTimestamp: exactTimestamp
+  });
+
   try {
-    // Inicializar estado si no existe
-    if (!hostsStatus[ipId]) {
-      const state = await getHostState(ipId, connectionManager);
-      
-      if (state) {
-        hostsStatus[ipId] = state;
-      } else {
-        // Host nuevo - inicializar como ONLINE
-        hostsStatus[ipId] = {
-          state: config.STATE_UP,
-          downSince: null,
-          upSince: Date.now(),
-          originalDownTime: null
-        };
-        await connectionManager.executeQuery(
-          'INSERT INTO host_state_log (ip_id, state, changed_at, is_active) VALUES (?, ?, NOW(), 1)',
-          [ipId, config.STATE_UP],
-          'state_management'
-        );
-      }
+    const sucursalInfo = await getSucursalInfo(ipId, connectionManager);
+    const consolaInfo = await getConsolaInfo(ipId, connectionManager);
+    const internetInfo = await getInternetInfo(ipId, connectionManager);
+
+    if (newStateValue === config.STATE_DOWN) {
+      const incidentInfo = {
+        confirmacionCaida: formatDate(new Date(exactTimestamp)),
+        confirmacionRecuperacion: null,
+        tiempoSinSistema: null
+      };
+      const emailData = await buildIncidentEmail('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
+      await sendMonitoringEmail(emailData.subject, emailData.html);
+    } else if (newStateValue === config.STATE_UP && host.originalDownTime) {
+      const tiempoSinSistema = formatDuration(host.originalDownTime, exactTimestamp);
+      const incidentInfo = {
+        confirmacionCaida: formatDate(new Date(host.originalDownTime)),
+        confirmacionRecuperacion: formatDate(new Date(exactTimestamp)),
+        tiempoSinSistema
+      };
+      const emailData = await buildIncidentEmail('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
+      await sendMonitoringEmail(emailData.subject, emailData.html);
+      host.originalDownTime = null;
     }
 
-    // Analizar logs para determinar si debe cambiar de estado
-    const analysis = await analyzeHost(ipId);
-    const currentState = hostsStatus[ipId];
-    const now = Date.now();
-    
-    // Determinar si hay cambio de estado
-    let shouldChange = false;
-    let newStateValue = currentState.state;
-    let exactTimestamp = now;
-    
-    // ONLINE → OFFLINE
-    if (currentState.state === config.STATE_UP && analysis.shouldBeOffline) {
-      shouldChange = true;
-      newStateValue = config.STATE_DOWN;
-      exactTimestamp = analysis.firstFailTimestamp || now;
-      console.log(`⚠️  ${name} (${ip}) → OFFLINE [${analysis.consecutiveFails}/${analysis.totalLogs} fallos consecutivos] - Primer fallo: ${formatDate(new Date(exactTimestamp))}`);
-    }
-    // OFFLINE → ONLINE
-    else if (currentState.state === config.STATE_DOWN && analysis.shouldBeOnline) {
-      shouldChange = true;
-      newStateValue = config.STATE_UP;
-      exactTimestamp = analysis.firstSuccessTimestamp || now;
-      console.log(`✅ ${name} (${ip}) → ONLINE [${analysis.consecutiveSuccess}/${analysis.totalLogs} éxitos consecutivos] - Primer éxito: ${formatDate(new Date(exactTimestamp))}`);
-    }
-    
-    // Aplicar cambio de estado
-    if (shouldChange) {
-      logStateTransition(ipId, currentState.state, newStateValue, analysis);
-      
-      // Actualizar estado en memoria
-      const updatedState = {
-        state: newStateValue,
-        downSince: newStateValue === config.STATE_DOWN ? exactTimestamp : null,
-        upSince: newStateValue === config.STATE_UP ? exactTimestamp : null,
-        originalDownTime: newStateValue === config.STATE_DOWN ? exactTimestamp : (newStateValue === config.STATE_UP ? currentState.originalDownTime : null)
-      };
-      hostsStatus[ipId] = updatedState;
-      
-      // Persistir en BD
-      await persistHostState(ipId, newStateValue, updatedState.downSince, updatedState.upSince, connectionManager);
-      
-      // Enviar correo de alerta
-      try {
-        const sucursalInfo = await getSucursalInfo(ipId, connectionManager);
-        const consolaInfo = await getConsolaInfo(ipId, connectionManager);
-        const internetInfo = await getInternetInfo(ipId, connectionManager);
-        
-        if (newStateValue === config.STATE_DOWN) {
-          // Correo de CAÍDA
-          const incidentInfo = {
-            confirmacionCaida: formatDate(new Date(exactTimestamp)),
-            confirmacionRecuperacion: null,
-            tiempoSinSistema: null
-          };
-          
-          const emailData = await buildIncidentEmail('caida', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-          await sendMonitoringEmail(emailData.subject, emailData.html);
-          console.log(`📧 Correo de CAÍDA enviado para ${name}`);
-          
-        } else if (newStateValue === config.STATE_UP && currentState.originalDownTime) {
-          // Correo de RECUPERACIÓN
-          const tiempoSinSistema = formatDuration(currentState.originalDownTime, exactTimestamp);
-          const incidentInfo = {
-            confirmacionCaida: formatDate(new Date(currentState.originalDownTime)),
-            confirmacionRecuperacion: formatDate(new Date(exactTimestamp)),
-            tiempoSinSistema: tiempoSinSistema
-          };
-          
-          const emailData = await buildIncidentEmail('recuperacion', sucursalInfo, consolaInfo, internetInfo, incidentInfo);
-          await sendMonitoringEmail(emailData.subject, emailData.html);
-          console.log(`📧 Correo de RECUPERACIÓN enviado para ${name} (Downtime: ${tiempoSinSistema})`);
-        }
-      } catch (emailError) {
-        console.error(`Error enviando correo para ${name}:`, emailError.message);
-      }
-    }
-    
-  } catch (error) {
-    console.error(`Error procesando el host ${name} (${ip}):`, error);
+    console.log(`Transición notificada: IP ${ipId} ${fromState} -> ${newStateValue}`);
+  } catch (emailError) {
+    console.error(`Error enviando correo para ${name}:`, emailError.message);
   }
 }
 
-/**
- * Inicia el worker de monitoreo
- */
 async function startWorker(poolConnection) {
   console.log('Iniciando servicio de monitoreo...');
-  
-  pool = poolConnection;
-  connectionManager = new ConnectionManager(pool);
 
-  // Configurar shutdown graceful
+  connectionManager = new ConnectionManager(poolConnection);
+  dbHealthService = new DbHealthService(poolConnection);
+  inventoryService = new InventoryService(poolConnection);
+  persistenceService = new PersistenceService(connectionManager, dbHealthService);
+
   process.on('SIGINT', async () => {
     console.log('Cerrando conexiones...');
+    dbHealthService.stop();
+    inventoryService.stopAutoRefresh();
     await connectionManager.closeAll();
     process.exit(0);
   });
 
-  // Cargar configuración desde BD (solo intervalo de revisión)
+  dbHealthService.start();
+  await inventoryService.loadInitial();
+  inventoryService.startAutoRefresh();
+
   try {
     const [rows] = await connectionManager.executeQuery(
-      "SELECT clave, valor FROM config WHERE clave = 'intervalo_revision_minutos'",
-      [],
+      "SELECT clave, valor FROM config WHERE clave IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        'intervalo_revision_minutos',
+        'umbral_caida_sucursal',
+        'umbral_recuperacion_sucursal',
+        'logs_analisis_sucursal',
+        'umbral_caida_dvr',
+        'umbral_recuperacion_dvr',
+        'logs_analisis_dvr',
+        'umbral_caida_server',
+        'umbral_recuperacion_server',
+        'logs_analisis_server'
+      ],
       'config'
     );
-    
+
     if (rows.length > 0 && rows[0].valor) {
-      checkInterval = parseInt(rows[0].valor) * 60 * 1000;
+      checkInterval = parseInt(rows[0].valor, 10) * 60 * 1000;
       console.log(`Intervalo de revisión configurado: ${rows[0].valor} minutos`);
     }
+
+    thresholdsByAsset = {
+      sucursal: {
+        ...config.ASSET_THRESHOLDS.sucursal,
+        failThreshold: configMap.umbral_caida_sucursal || config.ASSET_THRESHOLDS.sucursal.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_sucursal || config.ASSET_THRESHOLDS.sucursal.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_sucursal || config.ASSET_THRESHOLDS.sucursal.logsToAnalyze
+      },
+      dvr: {
+        ...config.ASSET_THRESHOLDS.dvr,
+        failThreshold: configMap.umbral_caida_dvr || config.ASSET_THRESHOLDS.dvr.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_dvr || config.ASSET_THRESHOLDS.dvr.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_dvr || config.ASSET_THRESHOLDS.dvr.logsToAnalyze
+      },
+      server: {
+        ...config.ASSET_THRESHOLDS.server,
+        failThreshold: configMap.umbral_caida_server || config.ASSET_THRESHOLDS.server.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_server || config.ASSET_THRESHOLDS.server.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_server || config.ASSET_THRESHOLDS.server.logsToAnalyze
+      }
+    };
   } catch (err) {
-    console.error('Error leyendo configuración, usando valores por defecto:', err);
+    console.error('Error leyendo configuración, usando valores por defecto:', err.message);
   }
 
-  // Inicializar estados desde BD
-  hostsStatus = await initializeHostStates(connectionManager);
-  console.log('Estado inicial cargado');
+  try {
+    const hostsStatus = await initializeHostStates(connectionManager);
+    Object.entries(hostsStatus).forEach(([ipId, state]) => {
+      const host = stateStore.ensureHost(Number(ipId));
+      host.state = state.state;
+      host.downSince = state.downSince;
+      host.upSince = state.upSince;
+      host.originalDownTime = state.originalDownTime;
+    });
+  } catch (error) {
+    console.error('No se pudo cargar estado inicial desde DB:', error.message);
+  }
 
-  // Loop principal de monitoreo
   setInterval(async () => {
     try {
-      const [ips] = await connectionManager.executeQuery(
-        'SELECT id, ip, name FROM ips',
-        [],
-        'main_loop'
-      );
-      
-      // Procesar en lotes pequeños para no saturar
-      for (let i = 0; i < ips.length; i += config.BATCH_SIZE) {
-        const batch = ips.slice(i, i + config.BATCH_SIZE);
-        await Promise.all(batch.map(host => checkHost(host)));
-        
-        if (i + config.BATCH_SIZE < ips.length) {
-          await new Promise(resolve => setTimeout(resolve, config.BATCH_DELAY));
+      const hosts = inventoryService.getInventory();
+      for (let i = 0; i < hosts.length; i += config.BATCH_SIZE) {
+        const batch = hosts.slice(i, i + config.BATCH_SIZE);
+        await Promise.all(batch.map((host) => checkHost(host)));
+
+        if (i + config.BATCH_SIZE < hosts.length) {
+          await new Promise((resolve) => setTimeout(resolve, config.BATCH_DELAY));
         }
       }
     } catch (error) {
-      console.error('Error en ciclo de monitoreo:', error);
+      console.error('Error en ciclo de monitoreo:', error.message);
     }
   }, checkInterval);
 }
 
-module.exports = { startWorker };
+function getMonitoringRuntimeStatus() {
+  return {
+    db: dbHealthService ? dbHealthService.status() : { healthy: false, degraded: true },
+    inventory: inventoryService ? inventoryService.getMeta() : { count: 0, lastRefreshAt: null, refreshError: 'not_initialized' },
+    persistence: persistenceService ? persistenceService.status() : { queueSize: 0, backfillOnRecovery: false },
+    stateStore: {
+      hostsTracked: stateStore.getHostsArray().length,
+      recentEvents: stateStore.getRecentEvents(20)
+    }
+  };
+}
+
+module.exports = {
+  startWorker,
+  getMonitoringRuntimeStatus
+};

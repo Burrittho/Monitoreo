@@ -1,51 +1,55 @@
 const { exec } = require('child_process');
-const pool = require('../config/db');
-const logger = require('../utils/logger').child({ component: 'monitor_ping' });
-const { recordMonitorCycle } = require('../services/monitorMetrics');
+const pool = require('../config/db'); // Tu pool de conexiones MySQL
+const liveStateStore = require('../services/liveStateStore');
 
 async function obtenerIPs() {
     let conn;
     try {
         conn = await pool.getConnection();
-        const [rows] = await conn.query('SELECT ip FROM ips');
-        return rows.map((row) => row.ip);
+        const [rows] = await conn.query('SELECT id, ip, name FROM ips');
+        inventoryCache = rows;
+        lastInventoryAt = Date.now();
+
+        rows.forEach((host) => stateStore.ensureHost(host.id, host));
+        return rows;
     } catch (err) {
-        logger.error({ error: err }, 'Error al obtener IPs');
-        return [];
+        console.error('Error obteniendo IPs desde DB, usando último inventario válido:', err.message);
+        return inventoryCache;
     } finally {
         if (conn) conn.release();
     }
 }
 
-async function hacerPing(ips) {
+async function hacerPing(hosts) {
     return new Promise((resolve) => {
-        if (!ips.length) return resolve([]);
+        if (!hosts.length) return resolve([]);
 
-        const comando = `fping -c1 -t1500 ${ips.join(' ')}`;
+        const ips = hosts.map((h) => h.ip);
+        const command = `fping -c1 -t1500 ${ips.join(' ')}`;
 
-        exec(comando, (error, stdout, stderr) => {
+        exec(command, (error, stdout, stderr) => {
             const output = stderr || stdout;
             const resultados = [];
-            const lineas = output.trim().split('\n');
-            lineas.forEach((linea) => {
-                const match = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%.*min\/avg\/max = ([\d\.]+)\/([\d\.]+)\/([\d\.]+)/);
+            const lines = output.trim().split('\n');
+            const hostByIp = new Map(hosts.map((h) => [h.ip, h]));
+
+            lines.forEach((line) => {
+                const match = line.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%.*min\/avg\/max = ([\d\.]+)\/([\d\.]+)\/([\d\.]+)/);
                 if (match) {
                     const ip = match[1];
-                    const recibidos = parseInt(match[3]);
+                    const received = parseInt(match[3], 10);
                     const avg = parseFloat(match[6]);
-                    resultados.push({ ip, alive: recibidos > 0, latency: avg });
+                    const host = hostByIp.get(ip);
+                    resultados.push({ ip, ipId: host ? host.id : null, name: host ? host.name : null, alive: received > 0, latency: avg });
                 } else {
-                    const noRespMatch = linea.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%/);
+                    const noRespMatch = line.match(/^([\d\.]+)\s+:\s+xmt\/rcv\/%loss = (\d+)\/(\d+)\/(\d+)%/);
                     if (noRespMatch) {
                         const ip = noRespMatch[1];
-                        resultados.push({ ip, alive: false, latency: 0 });
+                        const host = hostByIp.get(ip);
+                        resultados.push({ ip, ipId: host ? host.id : null, name: host ? host.name : null, alive: false, latency: 0 });
                     }
                 }
             });
-
-            if (error) {
-                logger.warn({ error: { message: error.message } }, 'fping finalizó con advertencia');
-            }
 
             resolve(resultados);
         });
@@ -55,39 +59,38 @@ async function hacerPing(ips) {
 async function guardarPingsEnLote(resultados) {
     if (!resultados.length) return;
 
+    const timestamp = Date.now();
+    resultados.forEach((resultado) => {
+        if (resultado.ipId) {
+            stateStore.updateCheck({
+                ipId: resultado.ipId,
+                ip: resultado.ip,
+                name: resultado.name,
+                alive: resultado.alive,
+                latency: resultado.latency,
+                timestamp
+            });
+        }
+    });
+
     let conn;
     try {
         conn = await pool.getConnection();
         await conn.beginTransaction();
 
-        const ips = [...new Set(resultados.map((r) => r.ip))];
-        const ipIds = {};
-
-        if (ips.length > 0) {
-            const placeholders = ips.map(() => '?').join(',');
-            const [ipRows] = await conn.query(`SELECT id, ip FROM ips WHERE ip IN (${placeholders})`, ips);
-
-            ipRows.forEach((row) => {
-                ipIds[row.ip] = row.id;
-            });
-        }
-
-        const valores = [];
-        const parametros = [];
+        const values = [];
+        const params = [];
 
         resultados.forEach((resultado) => {
-            const ipId = ipIds[resultado.ip];
-            if (ipId) {
-                valores.push('(?, ?, ?)');
-                parametros.push(ipId, resultado.latency, resultado.alive ? 1 : 0);
-            } else {
-                logger.warn({ ip: resultado.ip }, 'IP no encontrada en base de datos');
+            if (resultado.ipId) {
+                values.push('(?, ?, ?)');
+                params.push(resultado.ipId, resultado.latency, resultado.alive ? 1 : 0);
             }
         });
 
-        if (valores.length > 0) {
-            const query = `INSERT INTO ping_logs (ip_id, latency, success) VALUES ${valores.join(', ')}`;
-            await conn.query(query, parametros);
+        if (values.length > 0) {
+            const query = `INSERT INTO ping_logs (ip_id, latency, success) VALUES ${values.join(', ')}`;
+            await conn.query(query, params);
         }
 
         await conn.commit();
@@ -96,24 +99,23 @@ async function guardarPingsEnLote(resultados) {
             try {
                 await conn.rollback();
             } catch (rollbackErr) {
-                logger.error({ error: rollbackErr }, 'Error en rollback');
+                console.error('Error en rollback:', rollbackErr.message);
             }
         }
-        logger.error({ error: err }, 'Error al guardar pings en lote');
-        throw err;
+        console.error('Error al guardar pings en lote:', err.message);
     } finally {
         if (conn) {
             try {
                 conn.release();
             } catch (releaseErr) {
-                logger.error({ error: releaseErr }, 'Error al liberar conexión');
+                console.error('Error al liberar conexión:', releaseErr.message);
             }
         }
     }
 }
 
 async function iniciarPingsContinuos() {
-    logger.info({ intervalMs: 1000 }, 'Servicio de monitoreo iniciado');
+    console.log('Servicio de monitoreo iniciado.');
 
     setInterval(async () => {
         const startedAt = process.hrtime.bigint();
@@ -122,7 +124,9 @@ async function iniciarPingsContinuos() {
             let resultados = [];
 
             if (ips.length > 0) {
-                resultados = await hacerPing(ips);
+                const resultados = await hacerPing(ips);
+                liveStateStore.updateCycle('branches', resultados, new Date());
+                // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }
 
@@ -135,11 +139,19 @@ async function iniciarPingsContinuos() {
                 durationMs
             });
         } catch (err) {
-            logger.error({ error: err }, 'Error durante el ciclo de ping');
+            console.error('Error durante el ciclo de ping:', err.message);
         }
     }, 1000);
 }
 
+function getInventoryCacheMeta() {
+    return {
+        count: inventoryCache.length,
+        lastInventoryAt
+    };
+}
+
 module.exports = {
-    iniciarPingsContinuos
+    iniciarPingsContinuos,
+    getInventoryCacheMeta
 };

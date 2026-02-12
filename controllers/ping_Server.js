@@ -1,7 +1,6 @@
 const { exec } = require('child_process');
-const pool = require('../config/db');
-const logger = require('../utils/logger').child({ component: 'monitor_ping_server' });
-const { recordMonitorCycle } = require('../services/monitorMetrics');
+const pool = require('../config/db'); // Tu pool de conexiones MySQL
+const liveStateStore = require('../services/liveStateStore');
 
 async function obtenerIPs() {
     let conn;
@@ -122,7 +121,9 @@ async function iniciarPings_serverContinuos() {
             let resultados = [];
 
             if (ips.length > 0) {
-                resultados = await hacerPing(ips);
+                const resultados = await hacerPing(ips);
+                liveStateStore.updateCycle('servers', resultados, new Date());
+                // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }
 
