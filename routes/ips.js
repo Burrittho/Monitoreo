@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db'); // Configuración de conexión a la base de datos
 const { iniciarPingsContinuos } = require('../models/ping'); // Utilidades para el monitoreo
+const { requireApiKey } = require('../middleware/auth');
+const { validate, idParamValidator, ipsCreateValidators, ipsUpdateValidators } = require('../middleware/validation');
 
 // endpoint para obtener las IPs
-router.get('/ips', async (req, res) => {
+router.get('/ips', async (req, res, next) => {
     let connection;
     try {
         connection = await pool.getConnection();
@@ -17,14 +19,14 @@ router.get('/ips', async (req, res) => {
         res.json(rows || []);
     } catch (err) {
         console.error('Error en /ips:', err);
-        res.status(500).json({ error: 'Error al obtener IPs' });
+        return next(err);
     } finally {
         if (connection) connection.release();
     }
 });
 
 // Endpoint para agregar una nueva IP
-router.post('/addips', async (req, res) => {
+router.post('/addips', requireApiKey, validate(ipsCreateValidators), async (req, res, next) => {
     let conn;
     try {
         // Extraemos solo los campos necesarios del cuerpo de la solicitud
@@ -54,14 +56,14 @@ router.post('/addips', async (req, res) => {
         // ahora consulta las IPs desde la base de datos en cada ciclo
     } catch (err) {
         console.error("Error al procesar la solicitud:", err);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        return next(err);
     } finally {
         if (conn) conn.release(); // Liberar la conexión
     }
 });
 
 // Endpoint para eliminar una IP y sus registros asociados
-router.delete('/deleteips/:id', async (req, res) => {
+router.delete('/deleteips/:id', requireApiKey, validate([idParamValidator('id')]), async (req, res, next) => {
     const { id } = req.params;
     let connection;
     
@@ -104,13 +106,13 @@ router.delete('/deleteips/:id', async (req, res) => {
         }
     } catch (error) {
         console.error('Error al eliminar la IP y registros:', error);
-        res.status(500).json({ error: 'Error al eliminar la IP y sus registros.' });
+        return next(error);
     } finally {
         if (connection) connection.release();
     }
 });
 // Ruta para editar una IP (Editar)
-router.put('/editarips/:id', async (req, res) => {
+router.put('/editarips/:id', requireApiKey, validate(ipsUpdateValidators), async (req, res, next) => {
     const ipId = req.params.id; // Obtener el ID de la IP desde los parámetros de la URL
     const { nombre, internet1, internet2, url } = req.body; // Desestructurar los datos del cuerpo de la solicitud
 
@@ -142,14 +144,14 @@ router.put('/editarips/:id', async (req, res) => {
         res.json({ success: true, message: 'IP actualizada correctamente.' });
     } catch (error) {
         console.error('Error al actualizar la IP:', error);
-        res.status(500).json({ error: 'Error interno del servidor.' });
+        return next(error);
     } finally {
         if (conn) conn.release(); // Liberar la conexión
     }
 });
 
 // API para obtener los datos de una IP específica por su ID (Lista IPS Editar, eliminar)
-router.get('/consultaips/:id', async (req, res) => {
+router.get('/consultaips/:id', validate([idParamValidator('id')]), async (req, res, next) => {
     let connection;
     const ipId = req.params.id;  // Obtiene el ID de la IP desde la URL
     try {
@@ -163,7 +165,7 @@ router.get('/consultaips/:id', async (req, res) => {
 
         res.json(rows[0]);  // Devuelve los datos de la IP en formato JSON
     } catch (err) {
-        res.status(500).json({ error: err.toString() });  // Manejo de errores
+        return next(err);
     } finally {
         if (connection) connection.release();
     }

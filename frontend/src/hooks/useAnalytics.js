@@ -98,7 +98,10 @@ export default function useAnalytics() {
       setOutages(outagesArr)
       setInternet(internetResp || null)
       setCurrentOutages(Array.isArray(currentOutagesResp) ? (Array.isArray(currentOutagesResp[0]) ? currentOutagesResp[0] : currentOutagesResp) : [])
-      setInternetHistory(Array.isArray(internetHistoryResp) ? internetHistoryResp : [])
+      const historyItems = Array.isArray(internetHistoryResp?.items)
+        ? internetHistoryResp.items
+        : (Array.isArray(internetHistoryResp) ? internetHistoryResp : [])
+      setInternetHistory(historyItems)
     } catch (e) {
       setError(e.message)
       setStats(null)

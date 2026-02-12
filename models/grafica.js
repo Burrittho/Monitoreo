@@ -1,4 +1,4 @@
-const pool = require('../config/db');
+const pingRepository = require('../repositories/pingRepository');
 
 /**
  * Obtiene datos de ping para representación gráfica
@@ -8,39 +8,25 @@ const pool = require('../config/db');
  * @param {number} limit - Límite de registros (opcional, por defecto 1000)
  * @returns {Promise<Array>} - Array de objetos con fecha, latency y success
  */
-async function getPingHistoryForChart(ipId, startDate, endDate, limit = 86400) {
-  const connection = await pool.getConnection();
-  try {
-    // Convertir fechas si es necesario
-    const start = startDate instanceof Date ? startDate : new Date(startDate);
-    const end = endDate instanceof Date ? endDate : new Date(endDate);
-    
-    // Consulta para obtener datos de ping en un rango de tiempo
-    const [rows] = await connection.query(
-      `SELECT 
-        fecha, 
-        latency,
-        success,
-        UNIX_TIMESTAMP(fecha) * 1000 AS timestamp
-      FROM ping_logs
-      WHERE ip_id = ? 
-        AND fecha BETWEEN ? AND ?
-      ORDER BY fecha ASC
-      LIMIT ?`,
-      [ipId, start, end, limit]
-    );
-    
-    // Procesamiento de datos para el formato adecuado para gráficas
-    return rows.map(row => ({
-      fecha: row.fecha,
-      timestamp: row.timestamp,
-      latency: row.success ? row.latency : null, // null para pings fallidos
-      success: row.success ? 1 : 0,
-      status: row.success ? 'success' : 'failure'
-    }));
-  } finally {
-    connection.release();
-  }
+async function getPingHistoryForChart(ipId, startDate, endDate, limit = 86400, offset = 0) {
+  const start = startDate instanceof Date ? startDate : new Date(startDate);
+  const end = endDate instanceof Date ? endDate : new Date(endDate);
+
+  const rows = await pingRepository.getPingHistory({
+    ipId,
+    startDate: start,
+    endDate: end,
+    limit,
+    offset,
+  });
+
+  return rows.map(row => ({
+    fecha: row.fecha,
+    timestamp: row.timestamp,
+    latency: row.success ? row.latency : null,
+    success: row.success ? 1 : 0,
+    status: row.success ? 'success' : 'failure'
+  }));
 }
 
 /**
@@ -169,15 +155,7 @@ async function getChartData(ipId, startDate, endDate, limit = 1000) {
  * @returns {Promise<Array>} - Lista de IPs con id, name e ip
  */
 async function getMonitoredIps() {
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.query(
-      `SELECT id, name, ip FROM ips`
-    );
-    return rows;
-  } finally {
-    connection.release();
-  }
+  return pingRepository.getMonitoredIps();
 }
 
 module.exports = {

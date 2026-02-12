@@ -1,13 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useEffect, useState, useRef } from 'react'
-import { apiGet } from '../../lib/api'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+
+import { subscribeLiveMonitor, getLiveMonitorSnapshot } from '../../store/liveMonitorStore'
 
 export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
-  const refreshMsRef = useRef(60000)
-
   const [summary, setSummary] = useState({
     branchesActive: 0,
     branchesInactive: 0,
@@ -38,8 +37,11 @@ export default function Sidebar() {
     document.documentElement.style.setProperty('--sidebar-width', width)
   }, [collapsed])
 
-  useEffect(() => {
-    let timer
+  const { branches, dvr, servers } = useSyncExternalStore(
+    subscribeLiveMonitor,
+    getLiveMonitorSnapshot,
+    getLiveMonitorSnapshot,
+  )
 
     async function loadSummary() {
       try {
@@ -64,13 +66,19 @@ export default function Sidebar() {
       } catch {}
     }
 
-    async function loop() {
-      await loadSummary()
-      timer = setTimeout(loop, refreshMsRef.current)
-    }
-    loop()
-    return () => clearTimeout(timer)
-  }, [])
+    const b = count(branches)
+    const d = count(dvr)
+    const s = count(servers)
+
+    setSummary({
+      branchesActive: b.active,
+      branchesInactive: b.inactive,
+      dvrActive: d.active,
+      dvrInactive: d.inactive,
+      serversActive: s.active,
+      serversInactive: s.inactive,
+    })
+  }, [branches, dvr, servers])
 
   const itemBase = 'w-full flex items-center px-3 py-3 rounded-lg text-left transition-all'
   const iconWrap = collapsed ? 'w-full flex items-center justify-center' : 'flex items-center space-x-3'
