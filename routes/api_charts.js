@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps } = require('../models/grafica');
+const { validateIpId, validateDateRange, validatePagination } = require('../utils/queryValidators');
 
 /**
  * Endpoint para obtener datos de gráficas
@@ -8,25 +9,28 @@ const { getChartData, getMonitoredIps } = require('../models/grafica');
  */
 router.get('/chart-data', async (req, res) => {
     try {
-        const { ipId, startDate, endDate, limit } = req.query;
-        
-        if (!ipId) {
-            return res.status(400).json({ 
-                error: 'Se requiere el parámetro ipId' 
-            });
+        const { ipId, startDate, endDate, limit, offset } = req.query;
+
+        const ipIdValidation = validateIpId(ipId);
+        if (!ipIdValidation.valid) {
+            return res.status(400).json({ error: ipIdValidation.error });
         }
-        
-        if (!startDate || !endDate) {
-            return res.status(400).json({ 
-                error: 'Se requieren los parámetros startDate y endDate' 
-            });
+
+        const dateValidation = validateDateRange(startDate, endDate, { requireBoth: true });
+        if (!dateValidation.valid) {
+            return res.status(400).json({ error: dateValidation.error });
         }
-        
+
+        const paginationValidation = validatePagination(limit, offset, { defaultLimit: 841000, maxLimit: 841000, allowZeroLimit: false });
+        if (!paginationValidation.valid) {
+            return res.status(400).json({ error: paginationValidation.error });
+        }
+
         const data = await getChartData(
-            parseInt(ipId), 
-            startDate, 
-            endDate, 
-            limit ? parseInt(limit) : 841000
+            ipIdValidation.value,
+            dateValidation.start,
+            dateValidation.end,
+            paginationValidation.value.limit,
         );
         
         res.json(data);
