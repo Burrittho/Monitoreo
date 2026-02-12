@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const pool = require('../config/db'); // Tu pool de conexiones MySQL
+const liveStateStore = require('../services/liveStateStore');
 
 // Función para obtener la lista de IPs desde la base de datos
 async function obtenerIPs() {
@@ -138,6 +139,7 @@ async function iniciarPings_dvrContinuos() {
             
             if (ips.length > 0) {
                 const resultados = await hacerPing(ips);
+                liveStateStore.updateCycle('dvr', resultados, new Date());
                 // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }

@@ -1,4 +1,5 @@
 ﻿const express = require('express');
+const compression = require('compression');
 const ipsRoutes = require('./routes/ips'); // Importa las rutas para manejar IPs
 const ipsReportRoutes = require('./routes/ips_report'); // Importa las rutas para manejar IPs
 const pingHistoryRoutes = require('./routes/ping_history'); // Importa las rutas para manejar el historial de pings
@@ -12,11 +13,22 @@ const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); /
 const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
 const nrdpRoutes = require('./routes/nrdp'); // Importa las rutas NRDP para NSClient++
+const liveRoutes = require('./routes/live');
+const historicalRoutes = require('./routes/historical');
 const pool = require('./config/db'); // Importa la configuración de la base de datos
+const { withConditionalJson } = require('./utils/httpCache');
 
 // Crear una instancia de Express
 const app = express();
 const port = process.env.PORT || 3000;
+
+app.set('etag', 'strong');
+app.use(compression({
+    filter: (req, res) => {
+        if (req.path.startsWith('/api/live')) return false;
+        return compression.filter(req, res);
+    }
+}));
 
 // Middleware para parsear JSON y URL-encoded (necesario para NRDP)
 app.use(express.json()); 
@@ -26,11 +38,20 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, If-None-Match');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
 });
 
+app.use('/api/live', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+
+app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/live')) return next();
+    return withConditionalJson({ maxAge: 15 })(req, res, next);
+});
 
 // API Routes - Solo endpoints para el frontend
 app.use('/api/ips', ipsRoutes);  // Rutas para manejar IPs
@@ -42,6 +63,8 @@ app.use('/api/console', consoleRoutes);  // Rutas para manejar información de c
 app.use('/api/config/', config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
 app.use('/api', nrdpRoutes);  // Rutas NRDP para NSClient++ (monitoreo de servidores)
+app.use('/api', liveRoutes); // Estado live y stream SSE
+app.use('/api', historicalRoutes); // Endpoints históricos paginados
 
 // Health check endpoint
 app.get('/health', (req, res) => {
