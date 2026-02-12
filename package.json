@@ -2,7 +2,7 @@
   "name": "monitoreo",
   "version": "0.0.1",
   "description": "Proceso de creacion plataforma de monitoreo",
-  "main": "server.js",
+  "main": "src/server.js",
   "directories": {
     "test": "tests"
   },

@@ -142,4 +142,34 @@ router.get('/ips', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/ping-history/logs
+ * Historial paginado consistente: items, total, limit, offset
+ */
+router.get('/logs', async (req, res) => {
+  try {
+    const { ipId, startDate, endDate } = req.query;
+    if (!ipId) {
+      return res.status(400).json({ error: 'Se requiere ipId' });
+    }
+
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date();
+    const { limit, offset } = parsePagination(req.query, {
+      defaultLimit: LOGS_LIMIT_DEFAULT,
+      maxLimit: LOGS_LIMIT_MAX,
+    });
+
+    const [items, total] = await Promise.all([
+      getPingHistoryForChart(ipId, start, end, limit, offset),
+      pingRepository.countPingHistory({ ipId, startDate: start, endDate: end })
+    ]);
+
+    res.json({ items, total, limit, offset });
+  } catch (error) {
+    console.error('Error al obtener logs de ping:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 module.exports = router;
