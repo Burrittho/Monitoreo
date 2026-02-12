@@ -1,4 +1,5 @@
 ﻿const express = require('express');
+const compression = require('compression');
 const ipsRoutes = require('./routes/ips'); // Importa las rutas para manejar IPs
 const ipsReportRoutes = require('./routes/ips_report'); // Importa las rutas para manejar IPs
 const pingHistoryRoutes = require('./routes/ping_history'); // Importa las rutas para manejar el historial de pings
@@ -9,17 +10,25 @@ const config = require('./routes/config'); // Importa la configuración
 const {iniciarPingsContinuos} = require('./models/ping'); // Importa la función para iniciar pings
 const { iniciarPings_dvrContinuos } = require('./controllers/ping_DVR'); // Importa la función para iniciar pings para DVR
 const { iniciarPings_serverContinuos } = require('./controllers/ping_Server'); // Importa la función para iniciar pings para servidores
-const {startWorker} = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
+const { startWorker, getMonitoringRuntimeStatus } = require('./controllers/mailcontroller'); // Sistema de monitoreo N+1
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
 const nrdpRoutes = require('./routes/nrdp'); // Importa las rutas NRDP para NSClient++
+const liveRoutes = require('./routes/live');
+const historicalRoutes = require('./routes/historical');
 const pool = require('./config/db'); // Importa la configuración de la base de datos
-const { requireApiKey } = require('./middleware/auth');
-const { errorHandler } = require('./middleware/errorHandler');
-const { createRateLimiter } = require('./middleware/rateLimit');
+const { withConditionalJson } = require('./utils/httpCache');
 
 // Crear una instancia de Express
 const app = express();
 const port = process.env.PORT || 3000;
+
+app.set('etag', 'strong');
+app.use(compression({
+    filter: (req, res) => {
+        if (req.path.startsWith('/api/live')) return false;
+        return compression.filter(req, res);
+    }
+}));
 
 // Middleware para parsear JSON y URL-encoded (necesario para NRDP)
 app.use(express.json()); 
@@ -74,15 +83,22 @@ const ingestLimiter = createRateLimiter({
 });
 
 app.use((req, res, next) => {
-    if (req.path.startsWith('/api/nrdp') && req.method === 'POST') {
-        return ingestLimiter(req, res, next);
-    }
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-        return writeLimiter(req, res, next);
-    }
-    return readLimiter(req, res, next);
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, If-None-Match');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
 });
 
+app.use('/api/live', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+
+app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/live')) return next();
+    return withConditionalJson({ maxAge: 15 })(req, res, next);
+});
 
 // API Routes - Solo endpoints para el frontend
 app.use('/api/ips', ipsRoutes);  // Rutas para manejar IPs
@@ -94,14 +110,45 @@ app.use('/api/console', consoleRoutes);  // Rutas para manejar información de c
 app.use('/api/config/', requireApiKey, config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
 app.use('/api', nrdpRoutes);  // Rutas NRDP para NSClient++ (monitoreo de servidores)
+app.use('/api', liveRoutes); // Estado live y stream SSE
+app.use('/api', historicalRoutes); // Endpoints históricos paginados
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Middleware unificado de manejo de errores
-app.use(errorHandler);
+
+app.get('/ready', (req, res) => {
+    const runtime = getMonitoringRuntimeStatus();
+    const degraded = Boolean(runtime.db?.degraded);
+
+    res.status(degraded ? 503 : 200).json({
+        status: degraded ? 'degraded' : 'ready',
+        degraded,
+        db: runtime.db,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/api/meta/runtime', (req, res) => {
+    const runtime = getMonitoringRuntimeStatus();
+    res.json({
+        degraded: Boolean(runtime.db?.degraded),
+        dbOffline: Boolean(runtime.db?.degraded),
+        runtime,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Middleware de manejo de errores
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ 
+        error: 'Error interno del servidor',
+        message: err.message 
+    });
+});
 
 // Middleware para rutas no encontradas - Solo respuestas JSON
 app.use((req, res) => {
