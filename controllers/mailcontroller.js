@@ -14,98 +14,47 @@ const { buildIncidentEmail, formatDate, formatDuration } = require('../services/
 const { initializeHostStates, getHostState, persistHostState, logStateTransition } = require('../models/hostRepository');
 const { getSucursalInfo, getConsolaInfo, getInternetInfo } = require('../models/dataRepository');
 const config = require('../config/monitoreo');
+const { resolveAssetThresholds, getCurrentHostState } = require('../services/downtimeService');
 
 // Variables globales del servicio
 let connectionManager = null;
 let pool = null;
 let hostsStatus = {};
 let checkInterval = config.CHECK_INTERVAL;
+let thresholdsByAsset = { ...config.ASSET_THRESHOLDS };
 
 /**
  * Analiza los últimos 360 logs de ping para determinar el estado del host
  * Requiere 300 logs consecutivos del mismo tipo (éxito o fallo) para cambiar estado
  * Retorna el timestamp exacto del primer log que inició la secuencia consecutiva
  */
-async function analyzeHost(ipId) {
+async function analyzeHost(ipId, assetType = 'sucursal') {
   try {
+    const thresholds = resolveAssetThresholds(assetType, thresholdsByAsset);
     const [logs] = await connectionManager.executeQuery(
       'SELECT success, fecha, UNIX_TIMESTAMP(fecha) * 1000 as timestamp FROM ping_logs WHERE ip_id = ? ORDER BY fecha DESC LIMIT ?',
-      [ipId, config.LOGS_TO_ANALYZE],
+      [ipId, thresholds.logsToAnalyze],
       'queries'
     );
-    
-    if (logs.length === 0) {
-      return { 
-        shouldBeOnline: false, 
-        shouldBeOffline: false, 
-        consecutiveSuccess: 0, 
-        consecutiveFails: 0,
-        totalLogs: 0,
-        firstSuccessTimestamp: null,
-        firstFailTimestamp: null
-      };
-    }
-    
-    // Invertir para analizar en orden cronológico (más antiguo a más reciente)
-    logs.reverse();
-    
-    // Buscar la secuencia más larga de éxitos y fallos consecutivos
-    let consecutiveSuccess = 0;
-    let consecutiveFails = 0;
-    let maxConsecutiveSuccess = 0;
-    let maxConsecutiveFails = 0;
-    let firstSuccessTimestamp = null;
-    let firstFailTimestamp = null;
-    let tempSuccessStart = null;
-    let tempFailStart = null;
-    
-    for (const log of logs) {
-      if (log.success === 1) {
-        if (consecutiveSuccess === 0) {
-          tempSuccessStart = log.timestamp;
-        }
-        consecutiveSuccess++;
-        consecutiveFails = 0;
-        tempFailStart = null;
-        
-        if (consecutiveSuccess > maxConsecutiveSuccess) {
-          maxConsecutiveSuccess = consecutiveSuccess;
-          firstSuccessTimestamp = tempSuccessStart;
-        }
-      } else {
-        if (consecutiveFails === 0) {
-          tempFailStart = log.timestamp;
-        }
-        consecutiveFails++;
-        consecutiveSuccess = 0;
-        tempSuccessStart = null;
-        
-        if (consecutiveFails > maxConsecutiveFails) {
-          maxConsecutiveFails = consecutiveFails;
-          firstFailTimestamp = tempFailStart;
-        }
-      }
-    }
-    
-    return {
-      shouldBeOnline: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED,
-      shouldBeOffline: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED,
-      consecutiveSuccess: maxConsecutiveSuccess,
-      consecutiveFails: maxConsecutiveFails,
-      totalLogs: logs.length,
-      firstSuccessTimestamp: maxConsecutiveSuccess >= config.CONSECUTIVE_REQUIRED ? firstSuccessTimestamp : null,
-      firstFailTimestamp: maxConsecutiveFails >= config.CONSECUTIVE_REQUIRED ? firstFailTimestamp : null
-    };
+
+    const orderedLogs = logs.slice().reverse();
+    return getCurrentHostState(orderedLogs, {
+      failThreshold: thresholds.failThreshold,
+      recoveryThreshold: thresholds.recoveryThreshold,
+      currentState: hostsStatus[ipId]?.state || config.STATE_UP
+    });
   } catch (error) {
     console.error(`Error analizando logs de IP ${ipId}:`, error.message);
-    return { 
-      shouldBeOnline: false, 
-      shouldBeOffline: false, 
-      consecutiveSuccess: 0, 
-      consecutiveFails: 0,
-      totalLogs: 0,
+    return {
+      shouldChange: false,
+      shouldBeOnline: false,
+      shouldBeOffline: false,
+      newState: hostsStatus[ipId]?.state || config.STATE_UP,
       firstSuccessTimestamp: null,
-      firstFailTimestamp: null
+      firstFailTimestamp: null,
+      consecutiveSuccess: 0,
+      consecutiveFails: 0,
+      totalLogs: 0
     };
   }
 }
@@ -138,7 +87,7 @@ async function checkHost({ id: ipId, ip, name }) {
     }
 
     // Analizar logs para determinar si debe cambiar de estado
-    const analysis = await analyzeHost(ipId);
+    const analysis = await analyzeHost(ipId, 'sucursal');
     const currentState = hostsStatus[ipId];
     const now = Date.now();
     
@@ -235,18 +184,55 @@ async function startWorker(poolConnection) {
     process.exit(0);
   });
 
-  // Cargar configuración desde BD (solo intervalo de revisión)
+  // Cargar configuración desde BD (intervalo + umbrales por tipo)
   try {
     const [rows] = await connectionManager.executeQuery(
-      "SELECT clave, valor FROM config WHERE clave = 'intervalo_revision_minutos'",
-      [],
+      "SELECT clave, valor FROM config WHERE clave IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        'intervalo_revision_minutos',
+        'umbral_caida_sucursal',
+        'umbral_recuperacion_sucursal',
+        'logs_analisis_sucursal',
+        'umbral_caida_dvr',
+        'umbral_recuperacion_dvr',
+        'logs_analisis_dvr',
+        'umbral_caida_server',
+        'umbral_recuperacion_server',
+        'logs_analisis_server'
+      ],
       'config'
     );
-    
-    if (rows.length > 0 && rows[0].valor) {
-      checkInterval = parseInt(rows[0].valor) * 60 * 1000;
-      console.log(`Intervalo de revisión configurado: ${rows[0].valor} minutos`);
+
+    const configMap = rows.reduce((acc, row) => {
+      acc[row.clave] = Number.parseInt(row.valor, 10);
+      return acc;
+    }, {});
+
+    if (configMap.intervalo_revision_minutos) {
+      checkInterval = configMap.intervalo_revision_minutos * 60 * 1000;
+      console.log(`Intervalo de revisión configurado: ${configMap.intervalo_revision_minutos} minutos`);
     }
+
+    thresholdsByAsset = {
+      sucursal: {
+        ...config.ASSET_THRESHOLDS.sucursal,
+        failThreshold: configMap.umbral_caida_sucursal || config.ASSET_THRESHOLDS.sucursal.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_sucursal || config.ASSET_THRESHOLDS.sucursal.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_sucursal || config.ASSET_THRESHOLDS.sucursal.logsToAnalyze
+      },
+      dvr: {
+        ...config.ASSET_THRESHOLDS.dvr,
+        failThreshold: configMap.umbral_caida_dvr || config.ASSET_THRESHOLDS.dvr.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_dvr || config.ASSET_THRESHOLDS.dvr.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_dvr || config.ASSET_THRESHOLDS.dvr.logsToAnalyze
+      },
+      server: {
+        ...config.ASSET_THRESHOLDS.server,
+        failThreshold: configMap.umbral_caida_server || config.ASSET_THRESHOLDS.server.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_server || config.ASSET_THRESHOLDS.server.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_server || config.ASSET_THRESHOLDS.server.logsToAnalyze
+      }
+    };
   } catch (err) {
     console.error('Error leyendo configuración, usando valores por defecto:', err);
   }
