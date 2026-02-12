@@ -51,5 +51,8 @@ module.exports = {
   CLEANUP_INTERVAL: 60000,
 
   // Retry de queries
-  QUERY_RETRIES: 3
+  QUERY_RETRIES: 3,            // Número de reintentos para queries fallidas
+
+  // Recuperación de persistencia
+  DB_BACKFILL_ON_RECOVERY: String(process.env.DB_BACKFILL_ON_RECOVERY || 'false').toLowerCase() === 'true'
 };

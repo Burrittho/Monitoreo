@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../config/db');
+const internetRepository = require('../repositories/internetRepository');
+const { parsePagination } = require('../utils/pagination');
+
+const HISTORY_LIMIT_DEFAULT = 20;
+const HISTORY_LIMIT_MAX = 200;
 
 /**
  * GET /api/internet/primary/:ipId
@@ -14,27 +18,10 @@ router.get('/primary/:ipId', async (req, res) => {
         return res.status(400).json({ error: 'Se requiere ipId' });
     }
 
-    let connection;
     try {
-        connection = await pool.getConnection();
+        const data = await internetRepository.getLatestInternetByIp(ipId);
         
-        const query = `
-            SELECT 
-                ci.proveedor1 as proveedor,
-                ci.interfaz1 as puerto,
-                ci.tipo1 as configuracion,
-                ci.ip1 as ip,
-                ci.trazado1 as estado,
-                ci.fecha as ultima_revision
-            FROM check_internet ci
-            WHERE ci.ip_id = ?
-            ORDER BY ci.fecha DESC
-            LIMIT 1
-        `;
-        
-        const [rows] = await connection.query(query, [ipId]);
-        
-        if (rows.length === 0) {
+        if (!data) {
             return res.json({
                 proveedor: 'N/A',
                 puerto: 'N/A',
@@ -45,12 +32,17 @@ router.get('/primary/:ipId', async (req, res) => {
             });
         }
         
-        res.json(rows[0]);
+        res.json({
+            proveedor: data.proveedor_primario,
+            puerto: data.puerto_primario,
+            configuracion: data.configuracion_primario,
+            ip: data.ip_primario,
+            estado: data.estado_primario,
+            ultima_revision: data.ultima_revision,
+        });
     } catch (err) {
         console.error('Error al obtener información de internet primario:', err);
         res.status(500).json({ error: 'Error interno del servidor' });
-    } finally {
-        if (connection) connection.release();
     }
 });
 
@@ -66,27 +58,10 @@ router.get('/secondary/:ipId', async (req, res) => {
         return res.status(400).json({ error: 'Se requiere ipId' });
     }
 
-    let connection;
     try {
-        connection = await pool.getConnection();
+        const data = await internetRepository.getLatestInternetByIp(ipId);
         
-        const query = `
-            SELECT 
-                ci.proveedor2 as proveedor,
-                ci.interfaz2 as puerto,
-                ci.tipo2 as configuracion,
-                ci.ip2 as ip,
-                ci.trazado2 as estado,
-                ci.fecha as ultima_revision
-            FROM check_internet ci
-            WHERE ci.ip_id = ?
-            ORDER BY ci.fecha DESC
-            LIMIT 1
-        `;
-        
-        const [rows] = await connection.query(query, [ipId]);
-        
-        if (rows.length === 0) {
+        if (!data) {
             return res.json({
                 proveedor: 'N/A',
                 puerto: 'N/A',
@@ -97,12 +72,17 @@ router.get('/secondary/:ipId', async (req, res) => {
             });
         }
         
-        res.json(rows[0]);
+        res.json({
+            proveedor: data.proveedor_secundario,
+            puerto: data.puerto_secundario,
+            configuracion: data.configuracion_secundario,
+            ip: data.ip_secundario,
+            estado: data.estado_secundario,
+            ultima_revision: data.ultima_revision,
+        });
     } catch (err) {
         console.error('Error al obtener información de internet secundario:', err);
         res.status(500).json({ error: 'Error interno del servidor' });
-    } finally {
-        if (connection) connection.release();
     }
 });
 
@@ -118,32 +98,10 @@ router.get('/both/:ipId', async (req, res) => {
         return res.status(400).json({ error: 'Se requiere ipId' });
     }
 
-    let connection;
     try {
-        connection = await pool.getConnection();
+        const data = await internetRepository.getLatestInternetByIp(ipId);
         
-        const query = `
-            SELECT 
-                ci.proveedor1 as proveedor_primario,
-                ci.interfaz1 as puerto_primario,
-                ci.tipo1 as configuracion_primario,
-                ci.ip1 as ip_primario,
-                ci.trazado1 as estado_primario,
-                ci.proveedor2 as proveedor_secundario,
-                ci.interfaz2 as puerto_secundario,
-                ci.tipo2 as configuracion_secundario,
-                ci.ip2 as ip_secundario,
-                ci.trazado2 as estado_secundario,
-                ci.fecha as ultima_revision
-            FROM check_internet ci
-            WHERE ci.ip_id = ?
-            ORDER BY ci.fecha DESC
-            LIMIT 1
-        `;
-        
-        const [rows] = await connection.query(query, [ipId]);
-        
-        if (rows.length === 0) {
+        if (!data) {
             return res.json({
                 primario: {
                     proveedor: 'N/A',
@@ -162,8 +120,6 @@ router.get('/both/:ipId', async (req, res) => {
                 ultima_revision: null
             });
         }
-        
-        const data = rows[0];
         
         res.json({
             primario: {
@@ -185,8 +141,6 @@ router.get('/both/:ipId', async (req, res) => {
     } catch (err) {
         console.error('Error al obtener información de ambos internets:', err);
         res.status(500).json({ error: 'Error interno del servidor' });
-    } finally {
-        if (connection) connection.release();
     }
 });
 
@@ -198,43 +152,25 @@ router.get('/both/:ipId', async (req, res) => {
  */
 router.get('/history/:ipId', async (req, res) => {
     const { ipId } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit, offset } = parsePagination(req.query, {
+        defaultLimit: HISTORY_LIMIT_DEFAULT,
+        maxLimit: HISTORY_LIMIT_MAX,
+    });
 
     if (!ipId) {
         return res.status(400).json({ error: 'Se requiere ipId' });
     }
 
-    let connection;
     try {
-        connection = await pool.getConnection();
-        
-        const query = `
-            SELECT 
-                ci.proveedor1 as proveedor_primario,
-                ci.interfaz1 as puerto_primario,
-                ci.tipo1 as configuracion_primario,
-                ci.ip1 as ip_primario,
-                ci.trazado1 as estado_primario,
-                ci.proveedor2 as proveedor_secundario,
-                ci.interfaz2 as puerto_secundario,
-                ci.tipo2 as configuracion_secundario,
-                ci.ip2 as ip_secundario,
-                ci.trazado2 as estado_secundario,
-                ci.fecha as fecha_revision
-            FROM check_internet ci
-            WHERE ci.ip_id = ?
-            ORDER BY ci.fecha DESC
-            LIMIT ?
-        `;
-        
-        const [rows] = await connection.query(query, [ipId, parseInt(limit)]);
-        
-        res.json(rows);
+        const [items, total] = await Promise.all([
+            internetRepository.getInternetHistory({ ipId, limit, offset }),
+            internetRepository.countInternetHistory(ipId),
+        ]);
+
+        res.json({ items, total, limit, offset });
     } catch (err) {
         console.error('Error al obtener historial de internet:', err);
         res.status(500).json({ error: 'Error interno del servidor' });
-    } finally {
-        if (connection) connection.release();
     }
 });
 
