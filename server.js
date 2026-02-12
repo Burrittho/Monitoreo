@@ -13,6 +13,9 @@ const {startWorker} = require('./controllers/mailcontroller'); // Sistema de mon
 const chartsRoutes = require('./routes/api_charts'); // Importa las rutas para gráficas
 const nrdpRoutes = require('./routes/nrdp'); // Importa las rutas NRDP para NSClient++
 const pool = require('./config/db'); // Importa la configuración de la base de datos
+const { requireApiKey } = require('./middleware/auth');
+const { errorHandler } = require('./middleware/errorHandler');
+const { createRateLimiter } = require('./middleware/rateLimit');
 
 // Crear una instancia de Express
 const app = express();
@@ -22,13 +25,62 @@ const port = process.env.PORT || 3000;
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
-// CORS para permitir requests desde el frontend (React/Vite en puerto 5173)
+// CORS con lista blanca configurable
+const allowedOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedMethods = 'GET,POST,PUT,DELETE,OPTIONS,PATCH';
+const allowedHeaders = 'Content-Type, Authorization, X-API-Key';
+
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') return res.sendStatus(204);
-    next();
+    const requestOrigin = req.headers.origin;
+    if (!requestOrigin || allowedOrigins.length === 0 || allowedOrigins.includes(requestOrigin)) {
+        if (requestOrigin) {
+            res.header('Access-Control-Allow-Origin', requestOrigin);
+            res.header('Vary', 'Origin');
+        }
+    }
+
+    res.header('Access-Control-Allow-Methods', allowedMethods);
+    res.header('Access-Control-Allow-Headers', allowedHeaders);
+
+    if (req.method === 'OPTIONS') {
+        if (requestOrigin && allowedOrigins.length > 0 && !allowedOrigins.includes(requestOrigin)) {
+            return res.sendStatus(403);
+        }
+        return res.sendStatus(204);
+    }
+    return next();
+});
+
+const readLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_READ_MAX || 300),
+    message: { error: 'Demasiadas solicitudes de lectura. Intente nuevamente.' },
+});
+
+const writeLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_WRITE_MAX || 80),
+    message: { error: 'Demasiadas solicitudes de escritura. Intente nuevamente.' },
+});
+
+const ingestLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_INGEST_MAX || 600),
+    message: { error: 'Demasiadas solicitudes de ingestión NRDP. Intente nuevamente.' },
+});
+
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/nrdp') && req.method === 'POST') {
+        return ingestLimiter(req, res, next);
+    }
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        return writeLimiter(req, res, next);
+    }
+    return readLimiter(req, res, next);
 });
 
 
@@ -39,7 +91,7 @@ app.use('/api/ping_history', pingHistoryRoutes);  // Rutas para manejar el histo
 app.use('/api/internet', internetRoutes);  // Rutas para manejar información de internet
 app.use('/api/reports', reportsRoutes);  // Rutas para manejar reportes de incidencias
 app.use('/api/console', consoleRoutes);  // Rutas para manejar información de consola
-app.use('/api/config/', config);  // Rutas para manejar configuración
+app.use('/api/config/', requireApiKey, config);  // Rutas para manejar configuración
 app.use('/api', chartsRoutes);  // Rutas para gráficas y análisis
 app.use('/api', nrdpRoutes);  // Rutas NRDP para NSClient++ (monitoreo de servidores)
 
@@ -48,14 +100,8 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Middleware de manejo de errores
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ 
-        error: 'Error interno del servidor',
-        message: err.message 
-    });
-});
+// Middleware unificado de manejo de errores
+app.use(errorHandler);
 
 // Middleware para rutas no encontradas - Solo respuestas JSON
 app.use((req, res) => {
