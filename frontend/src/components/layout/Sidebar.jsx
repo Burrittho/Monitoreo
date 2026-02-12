@@ -41,15 +41,6 @@ export default function Sidebar() {
   useEffect(() => {
     let timer
 
-    function norm(data) {
-      if (Array.isArray(data)) return Array.isArray(data[0]) ? data[0] : data
-      return []
-    }
-    function count(items) {
-      let active = 0, inactive = 0
-      for (const it of items) { if (it && it.success) active++; else inactive++ }
-      return { active, inactive }
-    }
     async function loadSummary() {
       try {
         // leer intervalo de backend
@@ -58,21 +49,17 @@ export default function Sidebar() {
           if (cfg?.intervalo) refreshMsRef.current = cfg.intervalo
         } catch {}
 
-        const [branches, dvrs, servers] = await Promise.all([
-          apiGet('/api/ips_report/ping-results').catch(() => []),
-          apiGet('/api/ips_report/ping-results-dvr').catch(() => []),
-          apiGet('/api/ips_report/ping-results-server').catch(() => []),
-        ])
-        const b = count(norm(branches))
-        const d = count(norm(dvrs))
-        const s = count(norm(servers))
+        const live = await apiGet('/api/live').catch(() => null)
+        const b = live?.groups?.branches?.summary || { active: 0, inactive: 0 }
+        const d = live?.groups?.dvr?.summary || { active: 0, inactive: 0 }
+        const s = live?.groups?.servers?.summary || { active: 0, inactive: 0 }
         setSummary({
-          branchesActive: b.active,
-          branchesInactive: b.inactive,
-          dvrActive: d.active,
-          dvrInactive: d.inactive,
-          serversActive: s.active,
-          serversInactive: s.inactive,
+          branchesActive: b.active || 0,
+          branchesInactive: b.inactive || 0,
+          dvrActive: d.active || 0,
+          dvrInactive: d.inactive || 0,
+          serversActive: s.active || 0,
+          serversInactive: s.inactive || 0,
         })
       } catch {}
     }
