@@ -8,12 +8,14 @@ const router = express.Router();
 const { processCheckResults, getServerStatus, getServerStats } = require('../services/nrdpProcessor');
 const { getGroupedMetrics } = require('../services/metricsAggregator');
 const pool = require('../config/db');
+const { requireApiKey } = require('../middleware/auth');
+const { validate } = require('../middleware/validation');
 
 /**
  * Endpoint NRDP principal - Compatible con NSClient++
  * POST /api/nrdp
  */
-router.post('/nrdp', async (req, res) => {
+router.post('/nrdp', validate([(req) => (!req.body.token ? { field: 'token', message: 'token requerido' } : null), (req) => (req.body.cmd && typeof req.body.cmd !== 'string' ? { field: 'cmd', message: 'cmd inválido' } : null)]), async (req, res, next) => {
   try {
     // Log detallado de la petición recibida
     console.log('=== NRDP Request Received ===');
@@ -88,7 +90,6 @@ router.post('/nrdp', async (req, res) => {
           return res.status(400).json({ 
             status: 'error', 
             message: 'Invalid XML format',
-            details: e.message
           });
         }
       } else if (json) {
@@ -100,7 +101,6 @@ router.post('/nrdp', async (req, res) => {
           return res.status(400).json({ 
             status: 'error', 
             message: 'Invalid JSON format',
-            details: e.message
           });
         }
       } else if (xml) {
@@ -131,7 +131,6 @@ router.post('/nrdp', async (req, res) => {
           return res.status(400).json({ 
             status: 'error', 
             message: 'Invalid XML format',
-            details: e.message
           });
         }
       } else {
@@ -174,12 +173,7 @@ router.post('/nrdp', async (req, res) => {
     });
     
   } catch (err) {
-    console.error('NRDP Error:', err);
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    return next(err);
   }
 });
 
@@ -213,7 +207,6 @@ router.get('/nrdp/servers', async (req, res) => {
     console.error('Error fetching servers:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -239,7 +232,6 @@ router.get('/nrdp/servers/:hostname', async (req, res) => {
     console.error('Error fetching server status:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -248,7 +240,7 @@ router.get('/nrdp/servers/:hostname', async (req, res) => {
  * Obtener métricas de un servidor
  * GET /api/nrdp/servers/:hostname/metrics
  */
-router.get('/nrdp/servers/:hostname/metrics', async (req, res) => {
+router.get('/nrdp/servers/:hostname/metrics', validate([(req) => (!req.params.hostname ? { field: 'hostname', message: 'hostname requerido' } : null), (req) => { if (req.query.limit === undefined) return null; const limit = Number.parseInt(req.query.limit, 10); if (!Number.isInteger(limit) || limit < 1 || limit > 1000) return { field: 'limit', message: 'limit inválido' }; req.query.limit = limit; return null; }]), async (req, res, next) => {
   try {
     const { hostname } = req.params;
     const { limit = 100, service } = req.query;
@@ -298,7 +290,6 @@ router.get('/nrdp/servers/:hostname/metrics', async (req, res) => {
     console.error('Error fetching metrics:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -307,7 +298,7 @@ router.get('/nrdp/servers/:hostname/metrics', async (req, res) => {
  * Obtener perfdata parseado de un servidor
  * GET /api/nrdp/servers/:hostname/perfdata
  */
-router.get('/nrdp/servers/:hostname/perfdata', async (req, res) => {
+router.get('/nrdp/servers/:hostname/perfdata', validate([(req) => (!req.params.hostname ? { field: 'hostname', message: 'hostname requerido' } : null), (req) => { if (req.query.limit === undefined) return null; const limit = Number.parseInt(req.query.limit, 10); if (!Number.isInteger(limit) || limit < 1 || limit > 1000) return { field: 'limit', message: 'limit inválido' }; req.query.limit = limit; return null; }]), async (req, res, next) => {
   try {
     const { hostname } = req.params;
     const { limit = 100, metric_name, service_name } = req.query;
@@ -360,7 +351,6 @@ router.get('/nrdp/servers/:hostname/perfdata', async (req, res) => {
     console.error('Error fetching perfdata:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -369,7 +359,7 @@ router.get('/nrdp/servers/:hostname/perfdata', async (req, res) => {
  * Obtener estadísticas de un servidor
  * GET /api/nrdp/servers/:hostname/stats
  */
-router.get('/nrdp/servers/:hostname/stats', async (req, res) => {
+router.get('/nrdp/servers/:hostname/stats', validate([(req) => (!req.params.hostname ? { field: 'hostname', message: 'hostname requerido' } : null), (req) => { if (req.query.hours === undefined) return null; const hours = Number.parseInt(req.query.hours, 10); if (!Number.isInteger(hours) || hours < 1 || hours > 720) return { field: 'hours', message: 'hours inválido' }; req.query.hours = hours; return null; }]), async (req, res, next) => {
   try {
     const { hostname } = req.params;
     const { hours = 24 } = req.query;
@@ -403,7 +393,6 @@ router.get('/nrdp/servers/:hostname/stats', async (req, res) => {
     console.error('Error fetching stats:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -440,7 +429,6 @@ router.get('/nrdp/servers/:hostname/services', async (req, res) => {
     console.error('Error fetching services:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -466,7 +454,6 @@ router.get('/nrdp/servers/:hostname/metrics/grouped', async (req, res) => {
     console.error('Error fetching grouped metrics:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
@@ -475,7 +462,7 @@ router.get('/nrdp/servers/:hostname/metrics/grouped', async (req, res) => {
  * Actualizar información de un servidor
  * PATCH /api/nrdp/servers/:hostname
  */
-router.patch('/nrdp/servers/:hostname', async (req, res) => {
+router.patch('/nrdp/servers/:hostname', requireApiKey, validate([(req) => (!req.params.hostname ? { field: 'hostname', message: 'hostname requerido' } : null), (req) => { if (req.body.ip_address === undefined) return null; const ipRegex = /^(?:\d{1,3}\.){3}\d{1,3}$/; return ipRegex.test(req.body.ip_address) ? null : { field: 'ip_address', message: 'ip_address inválida' }; }]), async (req, res, next) => {
   try {
     const { hostname } = req.params;
     const { ip_address, description, os, location } = req.body;
@@ -532,7 +519,6 @@ router.patch('/nrdp/servers/:hostname', async (req, res) => {
     console.error('Error updating server:', err);
     res.status(500).json({ 
       error: 'Internal server error',
-      message: err.message 
     });
   }
 });
