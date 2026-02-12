@@ -18,7 +18,6 @@ const historicalRoutes = require('./routes/historical');
 const pool = require('./config/db'); // Importa la configuración de la base de datos
 const { withConditionalJson } = require('./utils/httpCache');
 
-// Crear una instancia de Express
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -33,6 +32,8 @@ app.use(compression({
 // Middleware para parsear JSON y URL-encoded (necesario para NRDP)
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
+app.use(requestContext);
+app.use(requestLogger);
 
 // CORS con lista blanca configurable
 const allowedOrigins = (process.env.CORS_ORIGINS || '')
@@ -115,7 +116,34 @@ app.use('/api', historicalRoutes); // Endpoints históricos paginados
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'alive',
+        service: 'monitoreo-backend',
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/ready', async (req, res) => {
+    const startedAt = process.hrtime.bigint();
+
+    try {
+        await pool.query('SELECT 1 AS ok');
+        const latencyMs = Number((Number(process.hrtime.bigint() - startedAt) / 1e6).toFixed(2));
+
+        recordDbStatus({ status: 'ready', latencyMs });
+        const readiness = getReadiness();
+        return res.json(readiness);
+    } catch (error) {
+        const latencyMs = Number((Number(process.hrtime.bigint() - startedAt) / 1e6).toFixed(2));
+
+        recordDbStatus({ status: 'unavailable', latencyMs, error });
+        const readiness = getReadiness();
+
+        return res.status(503).json({
+            ...readiness,
+            details: 'Base de datos no disponible. Servicio en modo degradado.'
+        });
+    }
 });
 
 
@@ -143,31 +171,35 @@ app.get('/api/meta/runtime', (req, res) => {
 
 // Middleware de manejo de errores
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ 
+    const requestLoggerInstance = req.log || logger;
+    requestLoggerInstance.error(
+        {
+            requestId: req.requestId,
+            route: req.originalUrl,
+            error: {
+                message: err.message,
+                stack: err.stack
+            }
+        },
+        'Unhandled server error'
+    );
+
+    res.status(500).json({
         error: 'Error interno del servidor',
-        message: err.message 
+        message: err.message,
+        requestId: req.requestId
     });
 });
 
-// Middleware para rutas no encontradas - Solo respuestas JSON
 app.use((req, res) => {
-    res.status(404).json({ error: 'Endpoint no encontrado' });
+    res.status(404).json({ error: 'Endpoint no encontrado', requestId: req.requestId });
 });
 
-//  Iniciar el sistema de monitoreo N+1 (reemplaza al sistema antiguo)
 startWorker(pool);
-
-// Iniciar los pings continuos al arrancar el servidor
 iniciarPingsContinuos();
-
-// Iniciar los pings continuos para DVR
 iniciarPings_dvrContinuos();
-
-// Iniciar los pings continuos para server
 iniciarPings_serverContinuos();
 
-// Iniciar el servidor en el puerto especificado
 app.listen(port, () => {
-    console.log(`Servidor iniciado en Puerto:${port}`);
+    logger.info({ port }, 'Servidor iniciado');
 });

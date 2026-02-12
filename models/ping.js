@@ -118,16 +118,26 @@ async function iniciarPingsContinuos() {
     console.log('Servicio de monitoreo iniciado.');
 
     setInterval(async () => {
+        const startedAt = process.hrtime.bigint();
         try {
-            // Obtenemos la lista actualizada de IPs en cada ciclo
             const ips = await obtenerIPs();
-            
+            let resultados = [];
+
             if (ips.length > 0) {
                 const resultados = await hacerPing(ips);
                 liveStateStore.updateCycle('branches', resultados, new Date());
                 // Usar función de lote en lugar de Promise.all individual
                 await guardarPingsEnLote(resultados);
             }
+
+            const pingFailures = resultados.filter((resultado) => !resultado.alive).length;
+            const durationMs = Number((Number(process.hrtime.bigint() - startedAt) / 1e6).toFixed(2));
+            recordMonitorCycle({
+                source: 'ips',
+                hostsEvaluated: ips.length,
+                pingFailures,
+                durationMs
+            });
         } catch (err) {
             console.error('Error durante el ciclo de ping:', err.message);
         }
