@@ -1,27 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps } = require('../models/grafica');
+const { validate, chartDataValidators } = require('../middleware/validation');
 
 /**
  * Endpoint para obtener datos de gráficas
  * GET /api/chart-data?ipId=1&startDate=2025-01-01&endDate=2025-01-02
  */
-router.get('/chart-data', async (req, res) => {
+router.get('/chart-data', validate(chartDataValidators), async (req, res, next) => {
     try {
         const { ipId, startDate, endDate, limit } = req.query;
         
-        if (!ipId) {
-            return res.status(400).json({ 
-                error: 'Se requiere el parámetro ipId' 
-            });
-        }
-        
-        if (!startDate || !endDate) {
-            return res.status(400).json({ 
-                error: 'Se requieren los parámetros startDate y endDate' 
-            });
-        }
-        
+
         const data = await getChartData(
             parseInt(ipId), 
             startDate, 
@@ -33,10 +23,7 @@ router.get('/chart-data', async (req, res) => {
         
     } catch (error) {
         console.error('Error getting chart data:', error);
-        res.status(500).json({ 
-            error: 'Error interno del servidor',
-            details: error.message 
-        });
+        return next(error);
     }
 });
 
@@ -44,16 +31,13 @@ router.get('/chart-data', async (req, res) => {
  * Endpoint para obtener la lista de IPs monitoreadas
  * GET /api/monitored-ips
  */
-router.get('/monitored-ips', async (req, res) => {
+router.get('/monitored-ips', async (req, res, next) => {
     try {
         const ips = await getMonitoredIps();
         res.json(ips);
     } catch (error) {
         console.error('Error getting monitored IPs:', error);
-        res.status(500).json({ 
-            error: 'Error interno del servidor',
-            details: error.message 
-        });
+        return next(error);
     }
 });
 
@@ -61,7 +45,7 @@ router.get('/monitored-ips', async (req, res) => {
  * Endpoint para obtener estadísticas generales del dashboard
  * GET /api/dashboard-stats
  */
-router.get('/dashboard-stats', async (req, res) => {
+router.get('/dashboard-stats', async (req, res, next) => {
     try {
         const { timeRange = '24h' } = req.query;
         
@@ -128,10 +112,7 @@ router.get('/dashboard-stats', async (req, res) => {
         
     } catch (error) {
         console.error('Error getting dashboard stats:', error);
-        res.status(500).json({ 
-            error: 'Error interno del servidor',
-            details: error.message 
-        });
+        return next(error);
     }
 });
 

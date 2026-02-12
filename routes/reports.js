@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
+const { requireApiKey } = require('../middleware/auth');
+const { validate, idParamValidator, paginationValidators, reportsCreateValidators, reportsUpdateValidators } = require('../middleware/validation');
 
 // =================== ENDPOINTS PARA DATOS DE INTERNET ===================
 
 // GET /api/reports/internet-data - Obtener datos de internet con paginación y filtros
-router.get('/internet-data', async (req, res) => {
+router.get('/internet-data', validate(paginationValidators), async (req, res, next) => {
     try {
         const {
             page = 1,
@@ -103,7 +105,7 @@ router.get('/internet-data', async (req, res) => {
         
     } catch (error) {
         console.error('Error getting internet data:', error);
-        res.status(500).json({ error: 'Error al obtener datos de internet', details: error.message });
+        return next(error);
     }
 });
 
@@ -125,7 +127,7 @@ router.get('/sucursales', async (req, res) => {
 });
 
 // GET /api/reports/proveedores-internet - Obtener tabla completa de proveedores de internet
-router.get('/proveedores-internet', async (req, res) => {
+router.get('/proveedores-internet', validate(paginationValidators), async (req, res, next) => {
     try {
         const {
             page = 1,
@@ -207,7 +209,7 @@ router.get('/proveedores-internet', async (req, res) => {
         
     } catch (error) {
         console.error('Error getting proveedores internet:', error);
-        res.status(500).json({ error: 'Error al obtener proveedores de internet', details: error.message });
+        return next(error);
     }
 });
 
@@ -231,7 +233,7 @@ router.get('/proveedores', async (req, res) => {
 });
 
 // GET /api/reports/proveedor-info/:sucursalId - Obtener información del proveedor para una sucursal
-router.get('/proveedor-info/:sucursalId', async (req, res) => {
+router.get('/proveedor-info/:sucursalId', validate([idParamValidator('sucursalId')]), async (req, res, next) => {
     try {
         const { sucursalId } = req.params;
         
@@ -251,7 +253,7 @@ router.get('/proveedor-info/:sucursalId', async (req, res) => {
 });
 
 // NUEVO: Endpoint para proveedor-info/:sucursalId - Proveer nombres y cuentas de proveedores para formulario dinámico
-router.get('/proveedor-info/:sucursalId', async (req,res)=>{
+router.get('/proveedor-info/:sucursalId', validate([idParamValidator('sucursalId')]), async (req,res, next)=>{
   const { sucursalId } = req.params;
   try {
     const [rows] = await pool.query(`SELECT proveedor_primario, cuenta_primario, proveedor_secundario, cuenta_secundario FROM proveedores_internet WHERE sucursal_id = ? LIMIT 1`, [sucursalId]);
@@ -259,7 +261,7 @@ router.get('/proveedor-info/:sucursalId', async (req,res)=>{
     res.json(rows[0]);
   } catch (e){
     console.error(e);
-    res.status(500).json({error:'Error obteniendo proveedores'});
+    return next(e);
   }
 });
 
@@ -268,7 +270,7 @@ router.get('/proveedor-info/:sucursalId', async (req,res)=>{
 // POST /api/reports/crear-reporte - Crear nuevo reporte
 // Remove duplicate proveedor-info if present (ensure only one)
 // Ajuste: POST crear-reporte sin titulo/descripcion/fecha_incidencia manual
-router.post('/crear-reporte', async (req, res) => {
+router.post('/crear-reporte', requireApiKey, validate(reportsCreateValidators), async (req, res, next) => {
   try {
     if(process.env.NODE_ENV !== 'production'){
       console.log('[REPORTES] Crear reporte payload recibido:', req.body);
@@ -296,13 +298,13 @@ router.post('/crear-reporte', async (req, res) => {
     res.json({ id: result.insertId, message: 'Reporte creado', tipo_internet });
   } catch (error) {
       console.error('Error creando reporte:', error.code, error.sqlMessage, error.sql);
-      res.status(500).json({ error: 'Error al crear reporte', code: error.code, detalle: error.sqlMessage });
+      return next(error);
   }
 });
 
 // GET /api/reports/reportes - Obtener lista de reportes
 // Interpretar estado=abiertos para filtrar != concluido
-router.get('/reportes', async (req, res) => {
+router.get('/reportes', validate(paginationValidators), async (req, res, next) => {
     try {
         const { page = 1, limit = 20, estado = '', sucursal = '', proveedor = '' } = req.query;
         const pageNum = parseInt(page) || 1;
@@ -346,12 +348,12 @@ router.get('/reportes', async (req, res) => {
         res.json({ data: reportes, pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total/limitNum) } });
     } catch (error) {
         console.error('Error obteniendo reportes:', error.code, error.sqlMessage);
-        res.status(500).json({ error: 'Error al obtener reportes', code: error.code, detalle: error.sqlMessage });
+        return next(error);
     }
 });
 
 // GET /api/reports/reporte/:id - Obtener reporte específico
-router.get('/reporte/:id', async (req, res) => {
+router.get('/reporte/:id', validate([idParamValidator('id')]), async (req, res, next) => {
     try {
         const { id } = req.params;
         
@@ -373,12 +375,12 @@ router.get('/reporte/:id', async (req, res) => {
         res.json(reporte[0]);
     } catch (error) {
         console.error('Error getting report:', error);
-        res.status(500).json({ error: 'Error al obtener el reporte' });
+        return next(error);
     }
 });
 
 // PUT /api/reports/reporte/:id - Actualizar reporte
-router.put('/reporte/:id', async (req, res) => {
+router.put('/reporte/:id', requireApiKey, validate(reportsUpdateValidators), async (req, res, next) => {
     try {
         const { id } = req.params;
         const updateFields = req.body;
@@ -414,12 +416,12 @@ router.put('/reporte/:id', async (req, res) => {
         
     } catch (error) {
         console.error('Error updating report:', error);
-        res.status(500).json({ error: 'Error al actualizar el reporte' });
+        return next(error);
     }
 });
 
 // DELETE /api/reports/reporte/:id - Eliminar reporte
-router.delete('/reporte/:id', async (req, res) => {
+router.delete('/reporte/:id', requireApiKey, validate([idParamValidator('id')]), async (req, res, next) => {
     try {
         const { id } = req.params;
         
@@ -428,12 +430,12 @@ router.delete('/reporte/:id', async (req, res) => {
         res.json({ message: 'Reporte eliminado exitosamente' });
     } catch (error) {
         console.error('Error deleting report:', error);
-        res.status(500).json({ error: 'Error al eliminar el reporte' });
+        return next(error);
     }
 });
 
 // POST /api/reports/reporte/:id/concluir - mover reporte a tabla de concluidos y eliminar de activos
-router.post('/reporte/:id/concluir', async (req, res) => {
+router.post('/reporte/:id/concluir', requireApiKey, validate([idParamValidator('id')]), async (req, res, next) => {
     const { id } = req.params;
     try {
         const [result] = await pool.execute(`UPDATE reportes_internet SET estado='concluido', fecha_resolucion=NOW() WHERE id=?`, [id]);
@@ -441,7 +443,7 @@ router.post('/reporte/:id/concluir', async (req, res) => {
         res.json({ message: 'Reporte concluido' });
     } catch (err){
         console.error('Error concluyendo reporte:', err);
-        res.status(500).json({ error: 'Error al concluir reporte' });
+        return next(err);
     }
 });
 

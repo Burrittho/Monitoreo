@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
+const { validate, configUpdateValidators } = require('../middleware/validation');
 
 // Obtener intervalo de refresco del monitor
 router.get('/refresh-interval', async (req, res) => {
@@ -80,7 +81,7 @@ router.get('/monitor-settings', async (req, res) => {
 });
 
 // Obtener una configuración específica
-router.get('/setting/:key', async (req, res) => {
+router.get('/setting/:key', validate(configUpdateValidators.slice(0,1)), async (req, res, next) => {
     try {
         const { key } = req.params;
         const conn = await pool.getConnection();
@@ -97,13 +98,12 @@ router.get('/setting/:key', async (req, res) => {
         let value = parseInt(rows[0].valor);
         res.json({ [key]: value });
     } catch (error) {
-        console.error('Error al obtener configuración específica:', error);
-        res.status(500).json({ error: 'Error al obtener configuración' });
+        return next(error);
     }
 });
 
 // Actualizar una configuración específica
-router.put('/setting/:key', async (req, res) => {
+router.put('/setting/:key', validate(configUpdateValidators), async (req, res, next) => {
     try {
         const { key } = req.params;
         const { value } = req.body;
@@ -125,8 +125,7 @@ router.put('/setting/:key', async (req, res) => {
 
         res.json({ success: true, message: 'Configuración actualizada' });
     } catch (error) {
-        console.error('Error al actualizar configuración:', error);
-        res.status(500).json({ error: 'Error al actualizar configuración' });
+        return next(error);
     }
 });
 
