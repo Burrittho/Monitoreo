@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps, getPingHistoryForChart, getChartStatistics } = require('../models/grafica');
-const pool = require('../config/db'); // Agregamos la conexión a la base de datos
+const pingRepository = require('../repositories/pingRepository');
+const { parsePagination } = require('../utils/pagination');
+
+const CHART_LIMIT_DEFAULT = 1000;
+const CHART_LIMIT_MAX = 10000;
+const LOGS_LIMIT_DEFAULT = 100;
+const LOGS_LIMIT_MAX = 2000;
 
 /**
  * GET /api/ping-history/chart
@@ -13,7 +19,7 @@ const pool = require('../config/db'); // Agregamos la conexión a la base de dat
  */
 router.get('/chart', async (req, res) => {
   try {
-    const { ipId, startDate, endDate, limit } = req.query;
+    const { ipId, startDate, endDate } = req.query;
     
     // Validaciones básicas
     if (!ipId) {
@@ -23,18 +29,10 @@ router.get('/chart', async (req, res) => {
     const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h atrás por defecto
     const end = endDate ? new Date(endDate) : new Date();
     
-    // Calcular límite dinámico basado en el rango de tiempo
-    let recordLimit = limit ? parseInt(limit) : null;
-    if (!recordLimit) {
-      const timeRangeHours = (end - start) / (1000 * 60 * 60);
-      if (timeRangeHours <= 1) {
-        recordLimit = 3600; // 1 registro por segundo máximo
-      } else if (timeRangeHours <= 12) {
-        recordLimit = 43200; // Hasta 12h con 1 reg/segundo
-      } else {
-        recordLimit = 86400; // Límite mayor para rangos largos
-      }
-    }
+    const { limit: recordLimit } = parsePagination(req.query, {
+      defaultLimit: CHART_LIMIT_DEFAULT,
+      maxLimit: CHART_LIMIT_MAX,
+    });
     
     const data = await getChartData(ipId, start, end, recordLimit);
     
@@ -72,21 +70,17 @@ router.get('/chart', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
   try {
-    const { ipId, startDate, endDate, limit } = req.query;
+    const { ipId, startDate, endDate } = req.query;
     if (!ipId) {
       return res.status(400).json({ error: 'Se requiere ipId' });
     }
     const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000);
     const end = endDate ? new Date(endDate) : new Date();
 
-    // Calcular límite dinámico similar al endpoint de chart
-    let recordLimit = limit ? parseInt(limit) : null;
-    if (!recordLimit) {
-      const timeRangeHours = (end - start) / (1000 * 60 * 60);
-      if (timeRangeHours <= 1) recordLimit = 3600;
-      else if (timeRangeHours <= 12) recordLimit = 43200;
-      else recordLimit = 86400;
-    }
+    const { limit: recordLimit } = parsePagination(req.query, {
+      defaultLimit: CHART_LIMIT_DEFAULT,
+      maxLimit: CHART_LIMIT_MAX,
+    });
 
     // Obtener datos y calcular estadísticas sin construir datasets de Chart.js
     const pingData = await getPingHistoryForChart(ipId, start, end, recordLimit);
@@ -165,6 +159,36 @@ router.get('/ips', async (req, res) => {
     res.json(ips);
   } catch (error) {
     console.error('Error al obtener IPs monitoreadas:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+/**
+ * GET /api/ping-history/logs
+ * Historial paginado consistente: items, total, limit, offset
+ */
+router.get('/logs', async (req, res) => {
+  try {
+    const { ipId, startDate, endDate } = req.query;
+    if (!ipId) {
+      return res.status(400).json({ error: 'Se requiere ipId' });
+    }
+
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date();
+    const { limit, offset } = parsePagination(req.query, {
+      defaultLimit: LOGS_LIMIT_DEFAULT,
+      maxLimit: LOGS_LIMIT_MAX,
+    });
+
+    const [items, total] = await Promise.all([
+      getPingHistoryForChart(ipId, start, end, limit, offset),
+      pingRepository.countPingHistory({ ipId, startDate: start, endDate: end })
+    ]);
+
+    res.json({ items, total, limit, offset });
+  } catch (error) {
+    console.error('Error al obtener logs de ping:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });

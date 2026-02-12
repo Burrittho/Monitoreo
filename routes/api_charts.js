@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getChartData, getMonitoredIps } = require('../models/grafica');
+const { parsePagination } = require('../utils/pagination');
+
+const CHART_LIMIT_DEFAULT = 1000;
+const CHART_LIMIT_MAX = 10000;
 
 /**
  * Endpoint para obtener datos de gráficas
@@ -8,7 +12,7 @@ const { getChartData, getMonitoredIps } = require('../models/grafica');
  */
 router.get('/chart-data', async (req, res) => {
     try {
-        const { ipId, startDate, endDate, limit } = req.query;
+        const { ipId, startDate, endDate } = req.query;
         
         if (!ipId) {
             return res.status(400).json({ 
@@ -22,11 +26,16 @@ router.get('/chart-data', async (req, res) => {
             });
         }
         
+        const { limit } = parsePagination(req.query, {
+            defaultLimit: CHART_LIMIT_DEFAULT,
+            maxLimit: CHART_LIMIT_MAX,
+        });
+
         const data = await getChartData(
             parseInt(ipId), 
             startDate, 
             endDate, 
-            limit ? parseInt(limit) : 841000
+            limit
         );
         
         res.json(data);
