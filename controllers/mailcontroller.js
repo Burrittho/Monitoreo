@@ -12,12 +12,14 @@ const { buildIncidentEmail, formatDate, formatDuration } = require('../services/
 const { initializeHostStates, logStateTransition } = require('../models/hostRepository');
 const { getSucursalInfo, getConsolaInfo, getInternetInfo } = require('../models/dataRepository');
 const config = require('../config/monitoreo');
+const { resolveAssetThresholds, getCurrentHostState } = require('../services/downtimeService');
 
 let connectionManager = null;
 let dbHealthService = null;
 let inventoryService = null;
 let persistenceService = null;
 let checkInterval = config.CHECK_INTERVAL;
+let thresholdsByAsset = { ...config.ASSET_THRESHOLDS };
 
 function analyzeRecentChecks(ipId) {
   const host = stateStore.getHost(ipId);
@@ -31,7 +33,10 @@ function analyzeRecentChecks(ipId) {
       consecutiveFails: 0,
       totalLogs: 0,
       firstSuccessTimestamp: null,
-      firstFailTimestamp: null
+      firstFailTimestamp: null,
+      consecutiveSuccess: 0,
+      consecutiveFails: 0,
+      totalLogs: 0
     };
   }
 
@@ -168,8 +173,19 @@ async function startWorker(poolConnection) {
 
   try {
     const [rows] = await connectionManager.executeQuery(
-      "SELECT clave, valor FROM config WHERE clave = 'intervalo_revision_minutos'",
-      [],
+      "SELECT clave, valor FROM config WHERE clave IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        'intervalo_revision_minutos',
+        'umbral_caida_sucursal',
+        'umbral_recuperacion_sucursal',
+        'logs_analisis_sucursal',
+        'umbral_caida_dvr',
+        'umbral_recuperacion_dvr',
+        'logs_analisis_dvr',
+        'umbral_caida_server',
+        'umbral_recuperacion_server',
+        'logs_analisis_server'
+      ],
       'config'
     );
 
@@ -177,6 +193,27 @@ async function startWorker(poolConnection) {
       checkInterval = parseInt(rows[0].valor, 10) * 60 * 1000;
       console.log(`Intervalo de revisión configurado: ${rows[0].valor} minutos`);
     }
+
+    thresholdsByAsset = {
+      sucursal: {
+        ...config.ASSET_THRESHOLDS.sucursal,
+        failThreshold: configMap.umbral_caida_sucursal || config.ASSET_THRESHOLDS.sucursal.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_sucursal || config.ASSET_THRESHOLDS.sucursal.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_sucursal || config.ASSET_THRESHOLDS.sucursal.logsToAnalyze
+      },
+      dvr: {
+        ...config.ASSET_THRESHOLDS.dvr,
+        failThreshold: configMap.umbral_caida_dvr || config.ASSET_THRESHOLDS.dvr.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_dvr || config.ASSET_THRESHOLDS.dvr.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_dvr || config.ASSET_THRESHOLDS.dvr.logsToAnalyze
+      },
+      server: {
+        ...config.ASSET_THRESHOLDS.server,
+        failThreshold: configMap.umbral_caida_server || config.ASSET_THRESHOLDS.server.failThreshold,
+        recoveryThreshold: configMap.umbral_recuperacion_server || config.ASSET_THRESHOLDS.server.recoveryThreshold,
+        logsToAnalyze: configMap.logs_analisis_server || config.ASSET_THRESHOLDS.server.logsToAnalyze
+      }
+    };
   } catch (err) {
     console.error('Error leyendo configuración, usando valores por defecto:', err.message);
   }
