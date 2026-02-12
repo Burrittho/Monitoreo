@@ -9,14 +9,14 @@ const { validate, chartDataValidators } = require('../middleware/validation');
  */
 router.get('/chart-data', validate(chartDataValidators), async (req, res, next) => {
     try {
-        const { ipId, startDate, endDate, limit } = req.query;
+        const { ipId, startDate, endDate } = req.query;
         
 
         const data = await getChartData(
             parseInt(ipId), 
             startDate, 
             endDate, 
-            limit ? parseInt(limit) : 841000
+            limit
         );
         
         res.json(data);
