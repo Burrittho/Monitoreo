@@ -22,7 +22,7 @@ router.get('/latency', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ?
         `;
-        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, new Date(startDate), new Date(endDate)]);
         
         res.json({ 
             average_latency: Number(rows[0].average_latency) || 0,
@@ -55,7 +55,7 @@ router.get('/min-latency', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ? AND success = 1 AND latency > 0
         `;
-        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, new Date(startDate), new Date(endDate)]);
         
         res.json({ 
             min_latency: Number(rows[0].min_latency) || 0
@@ -86,7 +86,7 @@ router.get('/max-latency', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ? AND success = 1 AND latency > 0
         `;
-        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, new Date(startDate), new Date(endDate)]);
         
         res.json({ 
             max_latency: Number(rows[0].max_latency) || 0
@@ -115,7 +115,7 @@ router.get('/packetloss', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND success = 0 AND fecha BETWEEN ? AND ?
         `;
-        const [rows] = await connection.query(query, [ipId, startDate, endDate]);
+        const [rows] = await connection.query(query, [ipId, new Date(startDate), new Date(endDate)]);
         res.json({ packet_loss: Number(rows[0].packet_loss) });
     } catch (err) {
         console.error(err);
@@ -143,7 +143,7 @@ router.get('/downtime', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ?
             ORDER BY fecha ASC
-        `, [ipId, startDate, endDate]);
+        `, [ipId, new Date(startDate), new Date(endDate)]);
         
         // Si no hay datos, retornar array vacío
         if (pingData.length === 0) {
@@ -151,9 +151,10 @@ router.get('/downtime', async (req, res) => {
         }
 
         // Verificar si todos los datos son success=0 (sin datos suficientes)
+        // Usar == para manejar tanto 0/1 como false/true según el driver de MySQL
         let allFailures = true;
         for (let i = 0; i < pingData.length; i++) {
-            if (pingData[i].success === 1) {
+            if (pingData[i].success == 1) {
                 allFailures = false;
                 break;
             }
@@ -170,25 +171,33 @@ router.get('/downtime', async (req, res) => {
             }]);
         }
         
-        // Buscar si había una caída activa antes del rango
-        // Optimización: buscar solo los últimos 10 registros para verificar caída activa
+        // Buscar fallos consecutivos antes del rango para detectar caídas que lo atraviesan
         const [priorData] = await connection.query(`
             SELECT success
             FROM ping_logs
             WHERE ip_id = ? AND fecha < ?
             ORDER BY fecha DESC
-            LIMIT 10
-        `, [ipId, startDate]);
-        
-        // Verificar si hay caída activa al inicio del período
-        let activeOutageAtStart = priorData.length >= 10 && priorData.every(row => row.success === 0);
-        
+            LIMIT 50
+        `, [ipId, new Date(startDate)]);
+
+        // Contar fallos consecutivos desde el ping más reciente hacia atrás
+        let priorConsecutiveFailures = 0;
+        for (const row of priorData) {
+            if (row.success == 0) priorConsecutiveFailures++;
+            else break;
+        }
+
+        // Hay caída activa al inicio si ya se alcanzó el umbral antes del rango
+        let activeOutageAtStart = priorConsecutiveFailures >= 10;
+
         // Procesar los datos para encontrar intervalos de caída
         const intervals = [];
         let inOutage = activeOutageAtStart;
-        let failRun = 0;
+        // Iniciar failRun con los fallos previos acumulados (para detectar caídas que cruzan el inicio del rango)
+        let failRun = activeOutageAtStart ? 0 : priorConsecutiveFailures;
         let successRun = 0;
-        let failRunStartTime = null;
+        // Si hay fallos previos parciales, la racha arranca desde el inicio del rango como referencia
+        let failRunStartTime = (!activeOutageAtStart && priorConsecutiveFailures > 0) ? startDate : null;
         let outageStart = activeOutageAtStart ? startDate : null;
         let lastFailureTime = null;
         let incidentsCount = 0;
@@ -197,7 +206,7 @@ router.get('/downtime', async (req, res) => {
             const { success, fecha } = pingData[i];
             const ts = fecha;
 
-            if (success === 0) {
+            if (success == 0) {
                 // fallo
                 if (failRun === 0) failRunStartTime = ts;
                 failRun++;
@@ -311,14 +320,14 @@ router.get('/downtime-count', async (req, res) => {
             FROM ping_logs
             WHERE ip_id = ? AND fecha BETWEEN ? AND ?
             ORDER BY fecha ASC
-        `, [ipId, startDate, endDate]);
+        `, [ipId, new Date(startDate), new Date(endDate)]);
         
         // Calcular downtime_count usando la misma lógica que ping_history
         let downtimeCount = 0;
         let consecutiveFailures = 0;
         
         for (let i = 0; i < pingData.length; i++) {
-            if (pingData[i].success === 0) {
+            if (pingData[i].success == 0) {
                 consecutiveFailures++;
                 if (consecutiveFailures === 10) { // 10 fallos consecutivos = 1 downtime
                     downtimeCount++;

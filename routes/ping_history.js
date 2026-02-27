@@ -92,17 +92,25 @@ router.get('/stats', async (req, res) => {
     const pingData = await getPingHistoryForChart(ipId, start, end, recordLimit);
     const stats = getChartStatistics(pingData);
 
-    // Calcular downtime_count (10 fallos consecutivos = 1 caída)
+    // Calcular downtime_count con la misma lógica: 10 fallos para abrir, 10 éxitos para cerrar
     let downtimeCount = 0;
     let consecutiveFailures = 0;
+    let consecutiveSuccesses = 0;
+    let inOutage = false;
     for (let i = 0; i < pingData.length; i++) {
       if (pingData[i].success === 0) {
         consecutiveFailures++;
-        if (consecutiveFailures === 10) {
+        consecutiveSuccesses = 0;
+        if (!inOutage && consecutiveFailures >= 10) {
           downtimeCount++;
+          inOutage = true;
         }
       } else {
+        consecutiveSuccesses++;
         consecutiveFailures = 0;
+        if (inOutage && consecutiveSuccesses >= 10) {
+          inOutage = false;
+        }
       }
     }
 
@@ -132,26 +140,34 @@ function calculateDowntimeCount(chartData) {
   if (!chartData || !chartData.datasets || chartData.datasets.length < 2) {
     return 0;
   }
-  
+
   const failureData = chartData.datasets[1].data; // Segunda dataset contiene los fallos
   if (!Array.isArray(failureData)) {
     return 0;
   }
-  
+
   let downtimeCount = 0;
   let consecutiveFailures = 0;
-  
+  let consecutiveSuccesses = 0;
+  let inOutage = false;
+
   for (let i = 0; i < failureData.length; i++) {
     if (failureData[i] !== null) { // Fallo detectado
       consecutiveFailures++;
-      if (consecutiveFailures === 10) { // 10 fallos consecutivos = 1 downtime
+      consecutiveSuccesses = 0;
+      if (!inOutage && consecutiveFailures >= 10) {
         downtimeCount++;
+        inOutage = true;
       }
-    } else {
-      consecutiveFailures = 0; // Reset al encontrar un éxito
+    } else { // Éxito
+      consecutiveSuccesses++;
+      consecutiveFailures = 0;
+      if (inOutage && consecutiveSuccesses >= 10) {
+        inOutage = false;
+      }
     }
   }
-  
+
   return downtimeCount;
 }
 
